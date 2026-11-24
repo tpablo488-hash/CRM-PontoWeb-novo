@@ -4164,50 +4164,8 @@ function AuthScreen({ theme, onToggleTheme, onAuthenticated, showToast, tokens }
                       Cadastrar conta de vendedor
                     </button>
                   </div>
-
-                  <div
-                    style={{ backgroundColor: tokens.bg, borderColor: tokens.border, borderRadius: 10 }}
-                    className="border p-3 text-[11px] flex flex-col gap-1.5"
-                  >
-                    <span style={{ color: tokens.textSecondary }} className="font-medium">
-                      Acesso rápido (credenciais provisionadas no bootstrap):
-                    </span>
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          soundEngine.playSfx('click');
-                          setEmail(MASTER_ADMIN_EMAIL);
-                          setPassword('PontoWeb@2026');
-                        }}
-                        style={{
-                          backgroundColor: 'rgba(128, 23, 255, 0.14)',
-                          color: tokens.primary,
-                          borderColor: 'rgba(128, 23, 255, 0.3)',
-                        }}
-                        className="border px-2.5 py-1 rounded-md font-medium hover:opacity-85"
-                      >
-                        Preencher Admin
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          soundEngine.playSfx('click');
-                          setEmail(INITIAL_SELLER_EMAIL);
-                          setPassword('Vendas@2026');
-                        }}
-                        style={{
-                          backgroundColor: tokens.surfaceElevated,
-                          color: tokens.textPrimary,
-                          borderColor: tokens.border,
-                        }}
-                        className="border px-2.5 py-1 rounded-md font-medium hover:opacity-85"
-                      >
-                        Preencher Vendedor
-                      </button>
-                    </div>
                   </div>
-                </div>
+
               </form>
             )}
 
