@@ -2188,28 +2188,19 @@ const dataEngine = new PontoWebDataEngine();
 function PontoWebLogo({ size = 34, showSubtitle = false, tokens }) {
   return (
     <div className="flex items-center gap-3 select-none">
-      <div
+      <img
+        src="/pontoweb-logo.jpg"
+        alt="PontoWeb"
         style={{
           width: size,
           height: size,
           borderRadius: 11,
-          background: `linear-gradient(135deg, ${tokens.primary} 0%, ${tokens.primaryDark} 100%)`,
+          objectFit: 'cover',
           boxShadow: tokens.glow,
           border: '1px solid rgba(237, 224, 255, 0.25)',
         }}
-        className="flex items-center justify-center shrink-0 relative overflow-hidden"
-      >
-        <svg width={size * 0.62} height={size * 0.62} viewBox="0 0 24 24" fill="none">
-          <path
-            d="M5 18V6H12.5C15.2614 6 17.5 8.23858 17.5 11C17.5 13.7614 15.2614 16 12.5 16H9"
-            stroke="#F4F1F8"
-            strokeWidth="2.4"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          <circle cx="18.5" cy="18" r="2.5" fill="#EDE0FF" />
-        </svg>
-      </div>
+        className="shrink-0"
+      />
       <div className="flex flex-col">
         <div className="flex items-center gap-1.5">
           <span
