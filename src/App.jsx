@@ -740,6 +740,229 @@ class PontoWebDataEngine {
     if (shouldBroadcast) {
       this.broadcast('DB_UPDATED');
     }
+    // Hybrid sync: persist to Supabase (fire-and-forget)
+    this.syncToSupabase(db).catch(() => {});
+  }
+
+  async syncToSupabase(db) {
+    try {
+      if (Array.isArray(db.users) && db.users.length) {
+        await supabase.from('users').upsert(
+          db.users.map((u) => ({
+            id: u.id,
+            name: u.name,
+            email: u.email,
+            password_hash: u.passwordHash || 'supabase_auth',
+            role: u.role,
+            status: u.status,
+            created_at: u.createdAt,
+            updated_at: u.updatedAt,
+            created_by: u.createdBy,
+            deleted_at: u.deletedAt,
+            deleted_by: u.deletedBy,
+          })),
+          { onConflict: 'id' }
+        );
+      }
+      if (Array.isArray(db.clients) && db.clients.length) {
+        await supabase.from('clients').upsert(
+          db.clients.map((c) => ({
+            id: c.id,
+            name: c.name,
+            segment: c.segment,
+            whatsapp: c.whatsapp,
+            notes: c.notes,
+            assigned_seller_id: c.assignedSellerId,
+            assigned_seller_name: c.assignedSellerName,
+            first_contact_status: c.firstContactStatus,
+            first_contact_at: c.firstContactAt,
+            first_contact_by: c.firstContactBy,
+            active_meeting_id: c.activeMeetingId,
+            meeting_status: c.meetingStatus,
+            meeting_date: c.meetingDate,
+            meeting_time: c.meetingTime,
+            has_sale: c.hasSale,
+            created_at: c.createdAt,
+            updated_at: c.updatedAt,
+            created_by: c.createdBy,
+            history: c.history || [],
+          })),
+          { onConflict: 'id' }
+        );
+      }
+      if (Array.isArray(db.tasks) && db.tasks.length) {
+        await supabase.from('tasks').upsert(
+          db.tasks.map((t) => ({
+            id: t.id,
+            type: t.type,
+            client_id: t.clientId,
+            client_name: t.clientName,
+            assigned_seller_id: t.assignedSellerId,
+            status: t.status,
+            due_date: t.dueDate,
+            created_at: t.createdAt,
+            completed_at: t.completedAt,
+            completed_by: t.completedBy,
+          })),
+          { onConflict: 'id' }
+        );
+      }
+      if (Array.isArray(db.meetings) && db.meetings.length) {
+        await supabase.from('meetings').upsert(
+          db.meetings.map((m) => ({
+            id: m.id,
+            type: m.type,
+            client_id: m.clientId,
+            client_name: m.clientName,
+            client_segment: m.clientSegment,
+            assigned_seller_id: m.assignedSellerId,
+            assigned_seller_name: m.assignedSellerName,
+            scheduled_date: m.scheduledDate,
+            scheduled_time: m.scheduledTime,
+            timezone: m.timezone,
+            status: m.status,
+            reschedule_count: m.rescheduleCount,
+            previous_schedules: m.previousSchedules || [],
+            report_id: m.reportId,
+            created_at: m.createdAt,
+            updated_at: m.updatedAt,
+            completed_at: m.completedAt,
+          })),
+          { onConflict: 'id' }
+        );
+      }
+      if (Array.isArray(db.meetingReports) && db.meetingReports.length) {
+        await supabase.from('meeting_reports').upsert(
+          db.meetingReports.map((r) => ({
+            id: r.id,
+            client_id: r.clientId,
+            client_name: r.clientName,
+            client_segment: r.clientSegment,
+            meeting_id: r.meetingId,
+            seller_id: r.sellerId,
+            seller_name: r.sellerName,
+            submitted_by_id: r.submittedById,
+            submitted_by_name: r.submittedByName,
+            is_read_by_admin: r.isReadByAdmin,
+            read_by_admin_at: r.readByAdminAt,
+            read_by_admin_name: r.readByAdminName,
+            created_at: r.createdAt,
+            section_a: r.sectionA,
+            sale_info: r.saleInfo,
+            section_b: r.sectionB,
+            section_c: r.sectionC,
+            section_f: r.sectionF,
+          })),
+          { onConflict: 'id' }
+        );
+      }
+      if (Array.isArray(db.sales) && db.sales.length) {
+        await supabase.from('sales').upsert(db.sales.map((s) => ({
+          id: s.id,
+          client_id: s.clientId,
+          status: s.status,
+          payment_structure: s.paymentStructure,
+          sale_value: s.saleValue,
+          sent_value: s.sentValue,
+          payment_method: s.paymentMethod,
+          created_at: s.createdAt,
+        })), { onConflict: 'id' });
+      }
+      if (Array.isArray(db.notifications) && db.notifications.length) {
+        await supabase.from('notifications').upsert(db.notifications.map((n) => ({
+          id: n.id,
+          user_id: n.userId,
+          title: n.title,
+          message: n.message,
+          type: n.type,
+          related_id: n.relatedId,
+          read: n.read,
+          created_at: n.createdAt,
+        })), { onConflict: 'id' });
+      }
+      if (Array.isArray(db.auditLogs) && db.auditLogs.length) {
+        await supabase.from('audit_logs').upsert(db.auditLogs.map((a) => ({
+          id: a.id,
+          timestamp: a.timestamp,
+          actor_email: a.actorEmail,
+          action: a.action,
+          details: a.details,
+          extra: a.extra || null,
+        })), { onConflict: 'id' });
+      }
+    } catch (e) {
+      console.warn('syncToSupabase failed', e?.message);
+    }
+  }
+
+  async syncFromSupabase() {
+    try {
+      const [users, clients, tasks, meetings, reports, sales, notifications, audits] = await Promise.all([
+        supabase.from('users').select('*'),
+        supabase.from('clients').select('*'),
+        supabase.from('tasks').select('*'),
+        supabase.from('meetings').select('*'),
+        supabase.from('meeting_reports').select('*'),
+        supabase.from('sales').select('*'),
+        supabase.from('notifications').select('*'),
+        supabase.from('audit_logs').select('*'),
+      ]);
+
+      const db = this.getDb();
+      if (users.data?.length) db.users = users.data.map((u) => ({
+        id: u.id, name: u.name, email: u.email, passwordHash: u.password_hash,
+        role: u.role, status: u.status, createdAt: u.created_at, updatedAt: u.updated_at,
+        createdBy: u.created_by, deletedAt: u.deleted_at, deletedBy: u.deleted_by,
+      }));
+      if (clients.data?.length) db.clients = clients.data.map((c) => ({
+        id: c.id, name: c.name, segment: c.segment, whatsapp: c.whatsapp, notes: c.notes,
+        assignedSellerId: c.assigned_seller_id, assignedSellerName: c.assigned_seller_name,
+        firstContactStatus: c.first_contact_status, firstContactAt: c.first_contact_at,
+        firstContactBy: c.first_contact_by, activeMeetingId: c.active_meeting_id,
+        meetingStatus: c.meeting_status, meetingDate: c.meeting_date, meetingTime: c.meeting_time,
+        hasSale: c.has_sale, createdAt: c.created_at, updatedAt: c.updated_at,
+        createdBy: c.created_by, history: c.history || [],
+      }));
+      if (tasks.data?.length) db.tasks = tasks.data.map((t) => ({
+        id: t.id, type: t.type, clientId: t.client_id, clientName: t.client_name,
+        assignedSellerId: t.assigned_seller_id, status: t.status, dueDate: t.due_date,
+        createdAt: t.created_at, completedAt: t.completed_at, completedBy: t.completed_by,
+      }));
+      if (meetings.data?.length) db.meetings = meetings.data.map((m) => ({
+        id: m.id, type: m.type, clientId: m.client_id, clientName: m.client_name,
+        clientSegment: m.client_segment, assignedSellerId: m.assigned_seller_id,
+        assignedSellerName: m.assigned_seller_name, scheduledDate: m.scheduled_date,
+        scheduledTime: m.scheduled_time, timezone: m.timezone, status: m.status,
+        rescheduleCount: m.reschedule_count, previousSchedules: m.previous_schedules || [],
+        reportId: m.report_id, createdAt: m.created_at, updatedAt: m.updated_at,
+        completedAt: m.completed_at,
+      }));
+      if (reports.data?.length) db.meetingReports = reports.data.map((r) => ({
+        id: r.id, clientId: r.client_id, clientName: r.client_name, clientSegment: r.client_segment,
+        meetingId: r.meeting_id, sellerId: r.seller_id, sellerName: r.seller_name,
+        submittedById: r.submitted_by_id, submittedByName: r.submitted_by_name,
+        isReadByAdmin: r.is_read_by_admin, readByAdminAt: r.read_by_admin_at,
+        readByAdminName: r.read_by_admin_name, createdAt: r.created_at,
+        sectionA: r.section_a, saleInfo: r.sale_info, sectionB: r.section_b,
+        sectionC: r.section_c, sectionF: r.section_f,
+      }));
+      if (sales.data?.length) db.sales = sales.data.map((s) => ({
+        id: s.id, clientId: s.client_id, status: s.status, paymentStructure: s.payment_structure,
+        saleValue: s.sale_value, sentValue: s.sent_value, paymentMethod: s.payment_method,
+        createdAt: s.created_at,
+      }));
+      if (notifications.data?.length) db.notifications = notifications.data.map((n) => ({
+        id: n.id, userId: n.user_id, title: n.title, message: n.message, type: n.type,
+        relatedId: n.related_id, read: n.read, createdAt: n.created_at,
+      }));
+      if (audits.data?.length) db.auditLogs = audits.data.map((a) => ({
+        id: a.id, timestamp: a.timestamp, actorEmail: a.actor_email, action: a.action,
+        details: a.details, extra: a.extra,
+      }));
+      this.saveDb(db, false);
+    } catch (e) {
+      console.warn('syncFromSupabase failed', e?.message);
+    }
   }
 
   appendAudit(db, actorEmail, action, details, extra = {}) {
@@ -7265,8 +7488,10 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
   useEffect(() => {
     soundEngine.loadPreferences();
-    dataEngine.validateSession().then((check) => {
-      if (check.valid) setCurrentUser(check.user);
+    dataEngine.syncFromSupabase().then(() => {
+      dataEngine.validateSession().then((check) => {
+        if (check.valid) setCurrentUser(check.user);
+      });
     });
   }, []);
 
