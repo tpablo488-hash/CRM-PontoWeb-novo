@@ -7101,7 +7101,7 @@ function AuthenticatedShell({
             </button>
 
             <div>
-              <h1 style={{ color: tokens.textPrimary }} className="text-base sm:text-lg font-semibold">
+              <h1 style={{ color: tokens.textPrimary, letterSpacing: '0.08em' }} className="text-base sm:text-lg font-semibold">
                 {pageTitles[activePage]}
               </h1>
               <div className="flex items-center gap-2 text-[11px]" style={{ color: tokens.textSecondary }}>
