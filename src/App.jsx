@@ -7488,10 +7488,10 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
   useEffect(() => {
     soundEngine.loadPreferences();
-    dataEngine.syncFromSupabase().then(() => {
-      dataEngine.validateSession().then((check) => {
-        if (check.valid) setCurrentUser(check.user);
-      });
+    dataEngine.validateSession().then((check) => {
+      if (check.valid) {
+        dataEngine.syncFromSupabase().then(() => setCurrentUser(check.user));
+      }
     });
   }, []);
 
