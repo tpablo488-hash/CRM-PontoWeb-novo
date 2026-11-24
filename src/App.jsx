@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { supabase } from './supabaseClient';
 import {
   Shield, Lock, Mail, Eye, EyeOff, Sun, Moon, Volume2, VolumeX,
   Play, Pause, LogOut, CheckCircle2, AlertTriangle, XCircle,
@@ -786,30 +787,39 @@ class PontoWebDataEngine {
     return user.name;
   }
 
-  authenticate(email, password) {
+  async authenticate(email, password) {
     const cleanEmail = (email || '').trim().toLowerCase();
     if (!cleanEmail || !password) {
       return { ok: false, code: 'VALIDATION_ERROR', message: 'Informe e-mail e senha para acessar.' };
     }
 
-    const db = this.getDb();
-    const user = db.users.find((u) => u.email.toLowerCase() === cleanEmail);
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      email: cleanEmail,
+      password,
+    });
 
-    if (!user) {
-      this.appendAudit(db, cleanEmail, 'LOGIN_FAILED', 'Tentativa de login com e-mail não cadastrado.');
-      this.saveDb(db);
+    if (authError || !authData?.user) {
       return { ok: false, code: 'INVALID_CREDENTIALS', message: 'Credenciais inválidas. Verifique seus dados.' };
     }
 
-    if (user.status === 'deleted') {
-      this.appendAudit(db, cleanEmail, 'LOGIN_BLOCKED_DELETED', 'Bloqueio de login: conta excluída.');
-      this.saveDb(db);
+    const { data: profile, error: profileError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', authData.user.id)
+      .single();
+
+    if (profileError || !profile) {
+      await supabase.auth.signOut();
+      return { ok: false, code: 'USER_NOT_FOUND', message: 'Perfil de usuário não encontrado.' };
+    }
+
+    if (profile.status === 'deleted') {
+      await supabase.auth.signOut();
       return { ok: false, code: 'ACCOUNT_DELETED', message: 'Esta conta foi excluída e não possui mais acesso.' };
     }
 
-    if (user.status === 'inactive') {
-      this.appendAudit(db, cleanEmail, 'LOGIN_BLOCKED_INACTIVE', 'Bloqueio de login: conta desativada.');
-      this.saveDb(db);
+    if (profile.status === 'inactive') {
+      await supabase.auth.signOut();
       return {
         ok: false,
         code: 'ACCOUNT_DISABLED',
@@ -817,44 +827,28 @@ class PontoWebDataEngine {
       };
     }
 
-    const hashed = hashPasswordSync(password);
-    if (user.passwordHash !== hashed) {
-      this.appendAudit(db, cleanEmail, 'LOGIN_FAILED', 'Senha incorreta informada.');
-      this.saveDb(db);
-      return { ok: false, code: 'INVALID_CREDENTIALS', message: 'Credenciais inválidas. Verifique seus dados.' };
-    }
-
-    const session = {
-      token: generateUUID(),
-      userId: user.id,
-      email: user.email,
-      role: user.role,
-      issuedAt: new Date().toISOString(),
-    };
-
-    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
-    this.appendAudit(db, user.email, 'LOGIN_SUCCESS', `Sessão iniciada com perfil ${user.role.toUpperCase()}.`);
-    this.saveDb(db);
-
-    const { passwordHash, ...safeUser } = user;
-    return { ok: true, user: safeUser, session };
+    const { passwordHash, ...safeUser } = profile;
+    return { ok: true, user: safeUser, session: authData.session };
   }
 
-  validateSession() {
+  async validateSession() {
     try {
-      const rawSession = localStorage.getItem(SESSION_KEY);
-      if (!rawSession) return { valid: false, reason: 'NO_SESSION' };
-      const session = JSON.parse(rawSession);
-      const db = this.getDb();
-      const user = db.users.find((u) => u.id === session.userId);
+      const { data } = await supabase.auth.getSession();
+      if (!data?.session) return { valid: false, reason: 'NO_SESSION' };
 
-      if (!user) {
-        this.clearSession();
+      const { data: profile, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', data.session.user.id)
+        .single();
+
+      if (error || !profile) {
+        await supabase.auth.signOut();
         return { valid: false, reason: 'USER_NOT_FOUND' };
       }
 
-      if (user.status !== 'active') {
-        this.clearSession();
+      if (profile.status !== 'active') {
+        await supabase.auth.signOut();
         return {
           valid: false,
           reason: 'ACCOUNT_REVOKED',
@@ -862,21 +856,25 @@ class PontoWebDataEngine {
         };
       }
 
-      const { passwordHash, ...safeUser } = user;
-      return { valid: true, user: safeUser, session };
+      const { passwordHash, ...safeUser } = profile;
+      return { valid: true, user: safeUser, session: data.session };
     } catch {
-      this.clearSession();
+      await supabase.auth.signOut();
       return { valid: false, reason: 'CORRUPT_SESSION' };
     }
   }
 
-  clearSession(actorEmail = null) {
+  async clearSession(actorEmail = null) {
     if (actorEmail) {
-      const db = this.getDb();
-      this.appendAudit(db, actorEmail, 'LOGOUT', 'Sessão encerrada pelo usuário.');
-      this.saveDb(db);
+      try {
+        await supabase.from('audit_logs').insert({
+          actor_email: actorEmail,
+          action: 'LOGOUT',
+          details: 'Sessão encerrada pelo usuário.',
+        });
+      } catch {}
     }
-    localStorage.removeItem(SESSION_KEY);
+    await supabase.auth.signOut();
   }
 
   requestPasswordRecovery(email) {
@@ -939,7 +937,7 @@ class PontoWebDataEngine {
     return { ok: true, message: 'Senha atualizada com sucesso! Você já pode entrar.' };
   }
 
-  createSellerAccount({ name, email, password, createdBy = 'PUBLIC_REGISTER' }) {
+  async createSellerAccount({ name, email, password, createdBy = 'PUBLIC_REGISTER' }) {
     const cleanName = (name || '').trim();
     const cleanEmail = (email || '').trim().toLowerCase();
 
@@ -953,36 +951,43 @@ class PontoWebDataEngine {
       return { ok: false, message: 'A senha deve possuir pelo menos 8 caracteres.' };
     }
 
-    const db = this.getDb();
-    const exists = db.users.some((u) => u.email.toLowerCase() === cleanEmail);
-    if (exists) {
+    const { data: existing } = await supabase.from('users').select('id').eq('email', cleanEmail).maybeSingle();
+    if (existing) {
       return { ok: false, message: 'Já existe uma conta vinculada a este e-mail.' };
     }
 
-    const now = new Date().toISOString();
-    const newUser = {
-      id: generateUUID(),
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email: cleanEmail,
+      password,
+    });
+
+    if (authError || !authData?.user) {
+      return { ok: false, message: authError?.message || 'Erro ao criar conta.' };
+    }
+
+    const { error: profileError } = await supabase.from('users').insert({
+      id: authData.user.id,
       name: cleanName,
       email: cleanEmail,
-      passwordHash: hashPasswordSync(password),
+      password_hash: 'supabase_auth',
       role: 'seller',
       status: 'active',
-      createdAt: now,
-      updatedAt: now,
-      createdBy,
-    };
+      created_by: createdBy,
+    });
 
-    db.users.push(newUser);
-    this.appendAudit(
-      db,
-      createdBy,
-      'USER_CREATED',
-      `Nova conta criada para ${cleanEmail} com perfil obrigatório VENDEDOR.`
-    );
-    this.saveDb(db);
+    if (profileError) {
+      return { ok: false, message: profileError.message };
+    }
 
-    const { passwordHash, ...safeUser } = newUser;
-    return { ok: true, user: safeUser };
+    try {
+      await supabase.from('audit_logs').insert({
+        actor_email: createdBy,
+        action: 'USER_CREATED',
+        details: `Nova conta criada para ${cleanEmail} com perfil obrigatório VENDEDOR.`,
+      });
+    } catch {}
+
+    return { ok: true, user: { id: authData.user.id, name: cleanName, email: cleanEmail, role: 'seller', status: 'active' } };
   }
 
   setUserStatus(actorUser, targetUserId, newStatus) {
@@ -3703,8 +3708,8 @@ function AuthScreen({ theme, onToggleTheme, onAuthenticated, showToast, tokens }
     setFormError('');
     setLoading(true);
 
-    setTimeout(() => {
-      const result = dataEngine.authenticate(email, password);
+    setTimeout(async () => {
+      const result = await dataEngine.authenticate(email, password);
       setLoading(false);
 
       if (!result.ok) {
@@ -3724,8 +3729,8 @@ function AuthScreen({ theme, onToggleTheme, onAuthenticated, showToast, tokens }
     setFormError('');
     setLoading(true);
 
-    setTimeout(() => {
-      const result = dataEngine.createSellerAccount({
+    setTimeout(async () => {
+      const result = await dataEngine.createSellerAccount({
         name: regName,
         email: regEmail,
         password: regPassword,
@@ -6230,10 +6235,10 @@ function UsersManagementPage({ db, currentUser, onRefresh, showToast, tokens }) 
     );
   }
 
-  const handleAddSeller = (e) => {
+  const handleAddSeller = async (e) => {
     e.preventDefault();
     setCreating(true);
-    const res = dataEngine.createSellerAccount({
+    const res = await dataEngine.createSellerAccount({
       name,
       email,
       password,
@@ -6672,12 +6677,13 @@ function AuthenticatedShell({
     const handleStorage = (e) => {
       if (e.key === DB_KEY || e.key === 'pontoweb_crm_last_sync') {
         refreshDb();
-        const check = dataEngine.validateSession();
-        if (!check.valid) {
-          soundEngine.playSfx('error');
-          showToast('error', 'Sessão encerrada', check.message || 'Sua sessão não é mais válida.');
-          onLogout(false);
-        }
+        dataEngine.validateSession().then((check) => {
+          if (!check.valid) {
+            soundEngine.playSfx('error');
+            showToast('error', 'Sessão encerrada', check.message || 'Sua sessão não é mais válida.');
+            onLogout(false);
+          }
+        });
       }
     };
     window.addEventListener('storage', handleStorage);
@@ -6687,12 +6693,13 @@ function AuthenticatedShell({
       channel = new BroadcastChannel(CHANNEL_NAME);
       channel.onmessage = () => {
         refreshDb();
-        const check = dataEngine.validateSession();
-        if (!check.valid) {
-          soundEngine.playSfx('error');
-          showToast('error', 'Sessão encerrada', check.message || 'Sua sessão não é mais válida.');
-          onLogout(false);
-        }
+        dataEngine.validateSession().then((check) => {
+          if (!check.valid) {
+            soundEngine.playSfx('error');
+            showToast('error', 'Sessão encerrada', check.message || 'Sua sessão não é mais válida.');
+            onLogout(false);
+          }
+        });
       };
     }
 
@@ -7255,12 +7262,13 @@ export default function App() {
     }
   });
 
-  const [currentUser, setCurrentUser] = useState(() => {
-    dataEngine.initializeDatabase();
+  const [currentUser, setCurrentUser] = useState(null);
+  useEffect(() => {
     soundEngine.loadPreferences();
-    const check = dataEngine.validateSession();
-    return check.valid ? check.user : null;
-  });
+    dataEngine.validateSession().then((check) => {
+      if (check.valid) setCurrentUser(check.user);
+    });
+  }, []);
 
   const [toast, setToast] = useState(null);
   const toastTimerRef = useRef(null);
@@ -7287,12 +7295,10 @@ export default function App() {
   const handleLogout = useCallback(
     (recordAudit = true) => {
       soundEngine.stopMusic();
-      if (recordAudit && currentUser?.email) {
-        dataEngine.clearSession(currentUser.email);
-      } else {
-        dataEngine.clearSession();
-      }
-      setCurrentUser(null);
+      const p = recordAudit && currentUser?.email
+        ? dataEngine.clearSession(currentUser.email)
+        : dataEngine.clearSession();
+      p.then(() => setCurrentUser(null));
     },
     [currentUser]
   );
