@@ -113,3 +113,11 @@ code {
   padding: 4px 8px;
   background: var(--code-bg);
 }
+
+@keyframes pw-neon-pulse {
+  0%, 100% { box-shadow: 0 0 4px rgba(128, 23, 255, 0.25); }
+  50% { box-shadow: 0 0 8px rgba(128, 23, 255, 0.45); }
+}
+.pw-neon-pulse {
+  animation: pw-neon-pulse 1.5s ease-in-out infinite;
+}

@@ -4861,11 +4861,16 @@ export default function App() {
                 <h1 className="text-base font-semibold" style={{ letterSpacing: '0.08em' }}>
                   {navItems.find((n) => n.id === activePage)?.label || 'Dashboard'}
                 </h1>
-                <p className="text-[11px]" style={{ color: '#8017FF' }}>Curta a vibe da PontoWeb clicando no Play ao lado</p>
+                <p className="text-xs" style={{ color: '#8017FF', letterSpacing: '0.04em' }}>Curta a vibe da PontoWeb clicando no Play</p>
               </div>
 
               <div className="flex items-center gap-2.5">
-                <Button size="sm" variant="secondary" onClick={toggleMusic}>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={toggleMusic}
+                  className={!musicPlaying ? 'pw-neon-pulse' : ''}
+                >
                   {musicPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
                   <span className="hidden sm:inline">{musicPlaying ? 'Música Ativa' : 'Tocar Música'}</span>
                 </Button>
