@@ -1753,8 +1753,8 @@ function getUserDisplayName(users, userId) {
 function AuthScreen({ onAuthenticated }) {
   const { tokens, theme, toggleTheme, notify } = useApp();
   const [mode, setMode] = useState('login'); // login | reset
-  const [email, setEmail] = useState('tpablo488@gmail.com');
-  const [password, setPassword] = useState('PontoWeb@2026');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [showPwd, setShowPwd] = useState(false);
   const [loading, setLoading] = useState(false);
