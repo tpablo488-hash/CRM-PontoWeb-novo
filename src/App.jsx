@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, createContext, useContext } from 'react';
+import { supabase } from './supabaseClient';
 import {
   Shield, Users, UserPlus, LogOut, Lock, Mail, Eye, EyeOff, Sun, Moon,
   Volume2, VolumeX, Play, Pause, CheckCircle2, AlertTriangle, XCircle,
@@ -587,6 +588,30 @@ class PontoWebDataEngine {
   saveState(state) {
     localStorage.setItem(DB_KEY, JSON.stringify(state));
     this.broadcast();
+    // Hybrid sync to Supabase (fire-and-forget) for cross-device sharing
+    this.syncToSupabase(state).catch(() => {});
+  }
+
+  async syncToSupabase(state) {
+    if (!supabase) return;
+    try {
+      await supabase.from('crm_state').upsert({ id: 'singleton', data: state, updated_at: new Date().toISOString() }, { onConflict: 'id' });
+    } catch (e) {
+      console.warn('syncToSupabase failed', e?.message);
+    }
+  }
+
+  async syncFromSupabase() {
+    if (!supabase) return;
+    try {
+      const { data } = await supabase.from('crm_state').select('data').eq('id', 'singleton').single();
+      if (data?.data) {
+        localStorage.setItem(DB_KEY, JSON.stringify(data.data));
+        this.broadcast();
+      }
+    } catch (e) {
+      console.warn('syncFromSupabase failed', e?.message);
+    }
   }
 
   getCurrentUser() {
@@ -4640,6 +4665,8 @@ export default function App() {
       const current = dataEngine.getCurrentUser();
       setUser(current);
     });
+    // Pull latest shared state from Supabase on mount (cross-device sync)
+    dataEngine.syncFromSupabase().catch(() => {});
     return unsub;
   }, []);
 
