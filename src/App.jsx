@@ -1462,15 +1462,12 @@ function PontoWebLogo({ size = 'md' }) {
   const dim = size === 'lg' ? 'w-11 h-11 text-lg' : 'w-9 h-9 text-sm';
   return (
     <div className="flex items-center gap-3 select-none">
-      <div
-        className={`${dim} rounded-xl flex items-center justify-center font-bold tracking-tight text-white relative overflow-hidden`}
-        style={{
-          background: 'linear-gradient(135deg, #8017FF 0%, #5010A8 100%)',
-          boxShadow: '0 0 22px rgba(128, 23, 255, 0.45)',
-        }}
-      >
-        <span>PW</span>
-      </div>
+      <img
+        src="/pontoweb-logomarca.png"
+        alt="PontoWeb"
+        className={`${dim} rounded-xl object-contain shrink-0`}
+        style={{ boxShadow: '0 0 22px rgba(128, 23, 255, 0.45)' }}
+      />
       <div>
         <div className="font-semibold tracking-tight leading-none flex items-center gap-1.5">
           <span>PontoWeb</span>
@@ -1481,7 +1478,7 @@ function PontoWebLogo({ size = 'md' }) {
             CRM
           </span>
         </div>
-        <p className="text-[11px] opacity-60 mt-0.5">Executive Revenue OS</p>
+        <p className="text-[11px] opacity-60 mt-0.5">CRM Executivo</p>
       </div>
     </div>
   );
