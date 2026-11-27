@@ -4861,7 +4861,7 @@ export default function App() {
                 <h1 className="text-base font-semibold" style={{ letterSpacing: '0.08em' }}>
                   {navItems.find((n) => n.id === activePage)?.label || 'Dashboard'}
                 </h1>
-                <p className="text-[11px] opacity-60">PontoWeb • Operação Comercial</p>
+                <p className="text-[11px]" style={{ color: '#8017FF' }}>Curta a vibe da PontoWeb clicando no Play ao lado</p>
               </div>
 
               <div className="flex items-center gap-2.5">
