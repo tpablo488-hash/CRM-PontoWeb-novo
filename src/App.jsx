@@ -1859,19 +1859,6 @@ function AuthScreen({ onAuthenticated }) {
                 </button>
               </div>
 
-              <div className="flex items-center justify-between text-xs">
-                <button
-                  type="button"
-                  onClick={() => {
-                    soundEngine.playSfx('click');
-                    setMode('reset');
-                  }}
-                  className="hover:underline"
-                  style={{ color: '#B87CFF' }}
-                >
-                  Esqueci minha senha
-                </button>
-              </div>
 
               <Button type="submit" variant="primary" size="lg" className="w-full" disabled={loading}>
                 <Lock className="w-4 h-4" />
