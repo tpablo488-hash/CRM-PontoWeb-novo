@@ -1904,42 +1904,6 @@ function AuthScreen({ onAuthenticated }) {
               </div>
             </form>
           )}
-
-          {/* Acesso rápido provisório entre perfis */}
-          <div className="pt-4 border-t space-y-2" style={{ borderColor: tokens.border }}>
-            <p className="text-[11px] uppercase tracking-wider opacity-60 font-semibold">
-              Contas Provisionadas (Acesso Rápido):
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => fillQuickAccount('tpablo488@gmail.com', 'PROVISORIIOhav787682#$')}
-                className="p-2.5 rounded-xl border text-left text-xs transition-all hover:border-[#8017FF]"
-                style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border, color: tokens.text }}
-              >
-                <div className="font-semibold text-[#B87CFF]">Pablo (Admin)</div>
-                <div className="opacity-65 text-[10px] truncate">tpablo488@gmail.com</div>
-              </button>
-              <button
-                type="button"
-                onClick={() => fillQuickAccount('jtoxx7@gmail.com', '1234vendedorpntw')}
-                className="p-2.5 rounded-xl border text-left text-xs transition-all hover:border-[#8017FF]"
-                style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border, color: tokens.text }}
-              >
-                <div className="font-semibold text-[#2AC78E]">Vendedor Jay</div>
-                <div className="opacity-65 text-[10px] truncate">jtoxx7@gmail.com</div>
-              </button>
-              <button
-                type="button"
-                onClick={() => fillQuickAccount('oliverf487@gmail.com', '1234SDRpntw')}
-                className="p-2.5 rounded-xl border text-left text-xs transition-all hover:border-[#8017FF]"
-                style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border, color: tokens.text }}
-              >
-                <div className="font-semibold text-[#F2B450]">Oliver (SDR)</div>
-                <div className="opacity-65 text-[10px] truncate">oliverf487@gmail.com</div>
-              </button>
-            </div>
-          </div>
         </Card>
       </main>
 
