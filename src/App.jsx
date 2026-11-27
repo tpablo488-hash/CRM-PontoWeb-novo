@@ -1,56 +1,30 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { supabase } from './supabaseClient';
+import React, { useState, useEffect, useRef, useMemo, createContext, useContext } from 'react';
 import {
-  Shield, Lock, Mail, Eye, EyeOff, Sun, Moon, Volume2, VolumeX,
-  Play, Pause, LogOut, CheckCircle2, AlertTriangle, XCircle,
-  Bell, User, KeyRound, Activity, Terminal, Sparkles, ArrowRight,
-  RefreshCw, Users, Check, Info, LayoutDashboard, UserPlus,
-  Calendar, DollarSign, FileText, Settings, Phone, Copy,
-  ExternalLink, Clock, Send, ArrowLeftRight, Building2, MessageSquare,
-  ChevronRight, Wifi, WifiOff, ClipboardCheck, AlertCircle, CalendarClock,
-  FileSpreadsheet, CheckCheck, X, Briefcase, Target, TrendingUp,
-  Search, Filter, Award, ArrowUpRight, Trash2, UserMinus, UserCheck,
-  Wallet, CreditCard, BarChart3, PieChart, ListFilter, Layers
+  Shield, Users, UserPlus, LogOut, Lock, Mail, Eye, EyeOff, Sun, Moon,
+  Volume2, VolumeX, Play, Pause, CheckCircle2, AlertTriangle, XCircle,
+  Bell, Search, Plus, ArrowRight, RefreshCw, Calendar, Clock, Phone,
+  Copy, Check, ExternalLink, FileText, DollarSign, TrendingUp, BarChart3,
+  Filter, ChevronRight, ChevronDown, X, Sparkles, Sliders, Activity,
+  UserCheck, UserX, Trash2, Edit3, Send, Layers, Award, Target, Briefcase
 } from 'lucide-react';
 
-/**
- * ============================================================================
- * PONTOWEB CRM — SISTEMA COMERCIAL INTEGRADO
- * ============================================================================
- * Atualizações aplicadas:
- * 1. Card "Contagem de Vendas" (sem gráfico e sem emoji) com comissão no topo
- *    direito e metas progressivas (Meta Mínima = 4 vendas | Meta Máxima = +7 vendas).
- * 2. Dia da semana exibido junto à data e horário da reunião nos cards e pendências.
- * 3. Botão "WhatsApp" funcional ao lado de "Já fiz" abrindo wa.me do cliente.
- * 4. Placeholder "Ex: Maria, Gabriel..." no campo Nome do cliente (Admin).
- * ============================================================================
- */
-
-const DB_KEY = 'pontoweb_crm_db_v1';
-const SESSION_KEY = 'pontoweb_crm_session_v1';
-const PREFS_KEY = 'pontoweb_crm_prefs_v1';
-const CHANNEL_NAME = 'pontoweb_crm_sync_channel';
-
-const MASTER_ADMIN_EMAIL = 'tpablo488@gmail.com';
-const INITIAL_SELLER_EMAIL = 'rayvenart3@gmail.com';
-const YOUTUBE_BG_VIDEO_ID = '77Y3r6hQbKE';
-
-const DESIGN_TOKENS = {
+// ============================================================================
+// 1. TOKENS INSTITUCIONAIS & ESTILOS GLOBAIS (DARK MODE PADRÃO + LIGHT MODE)
+// ============================================================================
+const THEME_TOKENS = {
   dark: {
     primary: '#8017FF',
     primaryDark: '#5010A8',
     primaryLight: '#EDE0FF',
     bg: '#080808',
     surface: '#121214',
-    surfaceElevated: '#18181C',
-    textPrimary: '#F4F1F8',
+    surfaceElevated: '#18171C',
+    text: '#F4F1F8',
     textSecondary: '#A89FB3',
     border: '#2A2531',
     success: '#16845B',
     warning: '#B7791F',
     error: '#C83E4D',
-    glow: '0 0 24px rgba(128, 23, 255, 0.28)',
-    glowStrong: '0 0 32px rgba(128, 23, 255, 0.45)',
   },
   light: {
     primary: '#8017FF',
@@ -59,78 +33,59 @@ const DESIGN_TOKENS = {
     bg: '#F7F5FA',
     surface: '#FFFFFF',
     surfaceElevated: '#F1EDF7',
-    textPrimary: '#241A2D',
+    text: '#241A2D',
     textSecondary: '#746B7D',
     border: '#E8E2ED',
     success: '#16845B',
     warning: '#B7791F',
     error: '#C83E4D',
-    glow: '0 4px 20px rgba(128, 23, 255, 0.14)',
-    glowStrong: '0 6px 28px rgba(128, 23, 255, 0.24)',
-  }
+  },
 };
 
-function generateUUID() {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-    return crypto.randomUUID();
-  }
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === 'x' ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
+// ============================================================================
+// 2. UTILITÁRIOS DE DATA / HORA (AMERICA/SAO_PAULO) E FORMATAÇÃO
+// ============================================================================
+const TIMEZONE = 'America/Sao_Paulo';
+
+function nowIso() {
+  return new Date().toISOString();
 }
 
-function hashPasswordSync(plain) {
-  let h1 = 0xdeadbeef;
-  let h2 = 0x41c6ce57;
-  const salted = `PW_CRM_SALT_2026::${plain}`;
-  for (let i = 0; i < salted.length; i++) {
-    const ch = salted.charCodeAt(i);
-    h1 = Math.imul(h1 ^ ch, 2654435761);
-    h2 = Math.imul(h2 ^ ch, 1597334677);
-  }
-  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
-  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
-  return 'pw_' + (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16);
-}
-
-function formatSaoPauloDateTime(isoString = new Date().toISOString()) {
+function formatDateTimeBR(isoString) {
+  if (!isoString) return 'Não informado';
   try {
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return isoString;
     return new Intl.DateTimeFormat('pt-BR', {
-      timeZone: 'America/Sao_Paulo',
+      timeZone: TIMEZONE,
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
-    }).format(new Date(isoString));
+    }).format(d);
   } catch {
-    return new Date(isoString).toLocaleString('pt-BR');
+    return isoString;
   }
 }
 
-function getSaoPauloWeekday(dateStr) {
-  if (!dateStr) return '';
+function formatDateWithWeekdayBR(dateStr, timeStr) {
+  if (!dateStr) return 'Data não informada';
   try {
     const [y, m, d] = dateStr.split('-').map(Number);
-    const utcDate = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+    const localDate = new Date(Date.UTC(y, m - 1, d, 15, 0, 0));
     const weekday = new Intl.DateTimeFormat('pt-BR', {
-      timeZone: 'America/Sao_Paulo',
+      timeZone: TIMEZONE,
       weekday: 'long',
-    }).format(utcDate);
-    return weekday.charAt(0).toUpperCase() + weekday.slice(1);
+    }).format(localDate);
+    const formattedDate = `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${y}`;
+    const capitalizedWeekday = weekday.charAt(0).toUpperCase() + weekday.slice(1);
+    return timeStr
+      ? `${capitalizedWeekday}, ${formattedDate} às ${timeStr}`
+      : `${capitalizedWeekday}, ${formattedDate}`;
   } catch {
-    return '';
+    return `${dateStr} ${timeStr || ''}`.trim();
   }
-}
-
-function formatMeetingSchedule(dateStr, timeStr, includeWeekday = false) {
-  if (!dateStr) return 'Não agendada';
-  const [y, m, d] = dateStr.split('-');
-  const weekday = includeWeekday ? getSaoPauloWeekday(dateStr) : '';
-  const prefix = weekday ? `${weekday}, ` : '';
-  return `${prefix}${d}/${m}/${y}${timeStr ? ` às ${timeStr}` : ''}`;
 }
 
 function formatCurrencyBRL(value) {
@@ -141,74 +96,47 @@ function formatCurrencyBRL(value) {
   }).format(num);
 }
 
-function sanitizeWhatsAppNumber(raw) {
-  const digits = (raw || '').replace(/\D/g, '');
-  return digits;
+function sanitizePhoneForWhatsApp(phone) {
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (!digits) return '';
+  return digits.startsWith('55') ? digits : `55${digits}`;
 }
 
-function formatWhatsAppDisplay(raw) {
-  const digits = sanitizeWhatsAppNumber(raw);
-  if (digits.length === 13 && digits.startsWith('55')) {
-    return `+55 (${digits.slice(2, 4)}) ${digits.slice(4, 9)}-${digits.slice(9)}`;
-  }
-  if (digits.length === 12 && digits.startsWith('55')) {
-    return `+55 (${digits.slice(2, 4)}) ${digits.slice(4, 8)}-${digits.slice(8)}`;
-  }
-  return raw;
+function generateId(prefix = 'id') {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
 }
 
-function buildWhatsAppLink(raw, clientName = '') {
-  const digits = sanitizeWhatsAppNumber(raw);
-  const text = encodeURIComponent(`Olá ${clientName}, tudo bem? Aqui é da PontoWeb!`);
-  return `https://wa.me/${digits}?text=${text}`;
-}
-
-function getTodaySaoPauloISO() {
-  try {
-    const parts = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'America/Sao_Paulo',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    }).formatToParts(new Date());
-    const map = Object.fromEntries(parts.map((p) => [p.type, p.value]));
-    return `${map.year}-${map.month}-${map.day}`;
-  } catch {
-    return new Date().toISOString().slice(0, 10);
-  }
-}
-
-function getCommissionPercentage(salesCount) {
-  if (salesCount >= 10) return 50;
-  if (salesCount === 9) return 45;
-  if (salesCount === 8) return 40;
-  if (salesCount >= 6) return 35;
-  return 30;
-}
-
-/**
- * ============================================================================
- * IDENTIDADE SONORA — MOTOR HÍBRIDO YOUTUBE LOOP + SÍNTESE EXECUTIVE LUXURY
- * ============================================================================
- */
-class PontoWebAudioEngine {
+// ============================================================================
+// 3. IDENTIDADE SONORA LUXURY TECH / OLD MONEY + ÁUDIO AMBIENTE EM LOOP
+// ============================================================================
+class PontoWebSoundEngine {
   constructor() {
     this.ctx = null;
-    this.isMusicPlaying = false;
-    this.musicVolume = 0.25;
-    this.sfxVolume = 0.45;
-    this.sfxEnabled = true;
     this.lastSfxTime = 0;
-
-    // YouTube IFrame Player + Fallback Sintetizado 98 BPM
     this.ytPlayer = null;
     this.ytReady = false;
-    this.ytFailed = false;
-    this.ytContainer = null;
-    this.initPromise = null;
+    this.fallbackInterval = null;
+    this.isMusicPlaying = false;
+    this.prefs = this.loadPrefs();
+  }
 
-    this.fallbackTimer = null;
-    this.fallbackStep = 0;
+  loadPrefs() {
+    try {
+      const saved = localStorage.getItem('pontoweb_audio_prefs_v2');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return {
+      sfxEnabled: true,
+      sfxVolume: 0.45,
+      musicEnabled: false,
+      musicVolume: 0.35,
+    };
+  }
+
+  savePrefs() {
+    try {
+      localStorage.setItem('pontoweb_audio_prefs_v2', JSON.stringify(this.prefs));
+    } catch {}
   }
 
   ensureContext() {
@@ -224,7283 +152,4803 @@ class PontoWebAudioEngine {
     return this.ctx;
   }
 
-  loadPreferences() {
-    try {
-      const saved = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
-      if (typeof saved.musicVolume === 'number') this.musicVolume = saved.musicVolume;
-      if (typeof saved.sfxVolume === 'number') this.sfxVolume = saved.sfxVolume;
-      if (typeof saved.sfxEnabled === 'boolean') this.sfxEnabled = saved.sfxEnabled;
-    } catch {}
-  }
-
-  savePreferences(partial) {
-    try {
-      const current = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
-      localStorage.setItem(PREFS_KEY, JSON.stringify({ ...current, ...partial }));
-    } catch {}
-  }
-
-  initYouTubePlayer() {
-    if (typeof window === 'undefined') return Promise.resolve(false);
-    if (this.ytReady && this.ytPlayer) return Promise.resolve(true);
-    if (this.ytFailed) return Promise.resolve(false);
-    if (this.initPromise) return this.initPromise;
-
-    this.initPromise = new Promise((resolve) => {
-      const timeout = setTimeout(() => {
-        if (!this.ytReady) {
-          this.ytFailed = true;
-          resolve(false);
-        }
-      }, 6500);
-
-      const createPlayer = () => {
-        try {
-          if (!this.ytContainer) {
-            this.ytContainer = document.createElement('div');
-            this.ytContainer.id = 'pw-yt-bg-audio-host';
-            this.ytContainer.style.cssText =
-              'position:fixed;bottom:0;right:0;width:200px;height:200px;opacity:0.001;pointer-events:none;z-index:-1;';
-            const inner = document.createElement('div');
-            inner.id = 'pw-yt-bg-iframe';
-            this.ytContainer.appendChild(inner);
-            document.body.appendChild(this.ytContainer);
-          }
-
-          this.ytPlayer = new window.YT.Player('pw-yt-bg-iframe', {
-            height: '200',
-            width: '200',
-            videoId: YOUTUBE_BG_VIDEO_ID,
-            playerVars: {
-              autoplay: 0,
-              controls: 0,
-              disablekb: 1,
-              fs: 0,
-              loop: 1,
-              playlist: YOUTUBE_BG_VIDEO_ID,
-              modestbranding: 1,
-              playsinline: 1,
-              rel: 0,
-              origin: window.location.origin,
-            },
-            events: {
-              onReady: (event) => {
-                clearTimeout(timeout);
-                this.ytReady = true;
-                try {
-                  event.target.setVolume(Math.round(this.musicVolume * 100));
-                  if (this.isMusicPlaying) {
-                    event.target.unMute();
-                    event.target.playVideo();
-                  }
-                } catch {}
-                resolve(true);
-              },
-              onStateChange: (event) => {
-                if (event.data === 0 && this.isMusicPlaying) {
-                  try {
-                    event.target.seekTo(0);
-                    event.target.playVideo();
-                  } catch {}
-                }
-              },
-              onError: () => {
-                clearTimeout(timeout);
-                this.ytFailed = true;
-                if (this.isMusicPlaying) {
-                  this.startFallbackAmbient();
-                }
-                resolve(false);
-              },
-            },
-          });
-        } catch {
-          clearTimeout(timeout);
-          this.ytFailed = true;
-          resolve(false);
-        }
-      };
-
-      if (window.YT && window.YT.Player) {
-        createPlayer();
-      } else {
-        const prevReady = window.onYouTubeIframeAPIReady;
-        window.onYouTubeIframeAPIReady = () => {
-          if (typeof prevReady === 'function') prevReady();
-          createPlayer();
-        };
-        if (!document.getElementById('pw-yt-iframe-api')) {
-          const tag = document.createElement('script');
-          tag.id = 'pw-yt-iframe-api';
-          tag.src = 'https://www.youtube.com/iframe_api';
-          tag.onerror = () => {
-            clearTimeout(timeout);
-            this.ytFailed = true;
-            resolve(false);
-          };
-          document.head.appendChild(tag);
-        }
-      }
-    });
-
-    return this.initPromise;
-  }
-
-  startFallbackAmbient() {
-    if (this.fallbackTimer) return;
-    const ctx = this.ensureContext();
-    if (!ctx) return;
-
-    const beatDuration = 60 / 98;
-    const playPulse = () => {
-      if (!this.isMusicPlaying || !this.ctx) return;
-      const now = this.ctx.currentTime;
-      const step = this.fallbackStep % 16;
-
-      if (step % 4 === 0) {
-        const osc = this.ctx.createOscillator();
-        const gain = this.ctx.createGain();
-        const filter = this.ctx.createBiquadFilter();
-        osc.type = 'sine';
-        const roots = [55, 55, 48.99, 65.41];
-        osc.frequency.setValueAtTime(roots[Math.floor(step / 4) % roots.length], now);
-        filter.type = 'lowpass';
-        filter.frequency.setValueAtTime(140, now);
-        gain.gain.setValueAtTime(0.0001, now);
-        gain.gain.linearRampToValueAtTime(this.musicVolume * 0.22, now + 0.08);
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + beatDuration * 3.6);
-        osc.connect(filter);
-        filter.connect(gain);
-        gain.connect(this.ctx.destination);
-        osc.start(now);
-        osc.stop(now + beatDuration * 3.8);
-      }
-
-      if (step === 2 || step === 10) {
-        const notes = [220, 261.63, 329.63, 392.0];
-        const freq = notes[(this.fallbackStep / 2) % notes.length];
-        const osc = this.ctx.createOscillator();
-        const gain = this.ctx.createGain();
-        osc.type = 'triangle';
-        osc.frequency.setValueAtTime(freq, now);
-        gain.gain.setValueAtTime(0.0001, now);
-        gain.gain.linearRampToValueAtTime(this.musicVolume * 0.08, now + 0.04);
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.4);
-        osc.connect(gain);
-        gain.connect(this.ctx.destination);
-        osc.start(now);
-        osc.stop(now + 1.5);
-      }
-
-      this.fallbackStep += 1;
-    };
-
-    playPulse();
-    this.fallbackTimer = setInterval(playPulse, beatDuration * 1000);
-  }
-
-  stopFallbackAmbient() {
-    if (this.fallbackTimer) {
-      clearInterval(this.fallbackTimer);
-      this.fallbackTimer = null;
-    }
-  }
-
-  async startMusic() {
-    if (this.isMusicPlaying) return;
-    this.isMusicPlaying = true;
-    this.ensureContext();
-
-    if (this.ytReady && this.ytPlayer) {
-      try {
-        this.ytPlayer.setVolume(Math.round(this.musicVolume * 100));
-        this.ytPlayer.unMute();
-        this.ytPlayer.playVideo();
-        return;
-      } catch {}
-    }
-
-    const ok = await this.initYouTubePlayer();
-    if (ok && this.ytPlayer && this.isMusicPlaying) {
-      try {
-        this.ytPlayer.setVolume(Math.round(this.musicVolume * 100));
-        this.ytPlayer.unMute();
-        this.ytPlayer.playVideo();
-      } catch {
-        this.startFallbackAmbient();
-      }
-    } else if (this.isMusicPlaying) {
-      this.startFallbackAmbient();
-    }
-  }
-
-  stopMusic() {
-    this.isMusicPlaying = false;
-    this.stopFallbackAmbient();
-    if (this.ytReady && this.ytPlayer) {
-      try {
-        this.ytPlayer.pauseVideo();
-      } catch {}
-    }
-  }
-
-  setMusicVolume(val) {
-    this.musicVolume = Math.max(0, Math.min(1, val));
-    if (this.ytReady && this.ytPlayer) {
-      try {
-        this.ytPlayer.setVolume(Math.round(this.musicVolume * 100));
-      } catch {}
-    }
-    this.savePreferences({ musicVolume: this.musicVolume });
-  }
-
-  setSfxVolume(val) {
-    this.sfxVolume = Math.max(0, Math.min(1, val));
-    this.savePreferences({ sfxVolume: this.sfxVolume });
-  }
-
-  setSfxEnabled(enabled) {
-    this.sfxEnabled = Boolean(enabled);
-    this.savePreferences({ sfxEnabled: this.sfxEnabled });
-  }
-
-  playSfx(type) {
-    if (!this.sfxEnabled || this.sfxVolume <= 0.005) return;
-    const ctx = this.ensureContext();
-    if (!ctx) return;
-
-    const now = ctx.currentTime;
-    if (now - this.lastSfxTime < 0.045) return;
+  // Efeitos sonoros Old Money / Executive Tech (zero timbres fofos)
+  playSfx(type = 'click') {
+    if (!this.prefs.sfxEnabled) return;
+    const now = performance.now();
+    if (now - this.lastSfxTime < 65) return; // Evita sobreposição
     this.lastSfxTime = now;
 
-    const v = this.sfxVolume;
+    const ctx = this.ensureContext();
+    if (!ctx) return;
 
-    switch (type) {
-      case 'click': {
-        const bodyOsc = ctx.createOscillator();
-        const bodyGain = ctx.createGain();
-        bodyOsc.type = 'sine';
-        bodyOsc.frequency.setValueAtTime(195, now);
-        bodyOsc.frequency.exponentialRampToValueAtTime(72, now + 0.028);
-        bodyGain.gain.setValueAtTime(v * 0.24, now);
-        bodyGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.032);
-        bodyOsc.connect(bodyGain);
-        bodyGain.connect(ctx.destination);
-        bodyOsc.start(now);
-        bodyOsc.stop(now + 0.036);
+    const t = ctx.currentTime;
+    const vol = Math.max(0.02, Math.min(1, this.prefs.sfxVolume));
 
-        const tickOsc = ctx.createOscillator();
-        const tickGain = ctx.createGain();
-        tickOsc.type = 'triangle';
-        tickOsc.frequency.setValueAtTime(1480, now);
-        tickOsc.frequency.exponentialRampToValueAtTime(640, now + 0.014);
-        tickGain.gain.setValueAtTime(v * 0.09, now);
-        tickGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.016);
-        tickOsc.connect(tickGain);
-        tickGain.connect(ctx.destination);
-        tickOsc.start(now);
-        tickOsc.stop(now + 0.02);
-        break;
-      }
-
-      case 'success': {
-        const sub = ctx.createOscillator();
-        const subGain = ctx.createGain();
-        sub.type = 'sine';
-        sub.frequency.setValueAtTime(110, now);
-        sub.frequency.exponentialRampToValueAtTime(82.41, now + 0.26);
-        subGain.gain.setValueAtTime(v * 0.24, now);
-        subGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.28);
-        sub.connect(subGain);
-        subGain.connect(ctx.destination);
-        sub.start(now);
-        sub.stop(now + 0.3);
-
-        [220, 329.63].forEach((freq, idx) => {
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          const filter = ctx.createBiquadFilter();
-          osc.type = 'triangle';
-          osc.frequency.setValueAtTime(freq, now + idx * 0.075);
-          filter.type = 'lowpass';
-          filter.frequency.setValueAtTime(1250, now + idx * 0.075);
-
-          gain.gain.setValueAtTime(0.0001, now + idx * 0.075);
-          gain.gain.linearRampToValueAtTime(v * 0.22, now + idx * 0.075 + 0.012);
-          gain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.075 + 0.34);
-
-          osc.connect(filter);
-          filter.connect(gain);
-          gain.connect(ctx.destination);
-          osc.start(now + idx * 0.075);
-          osc.stop(now + idx * 0.075 + 0.36);
-        });
-        break;
-      }
-
-      case 'notification': {
-        [659.25, 987.77].forEach((freq, i) => {
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          osc.type = 'sine';
-          osc.frequency.setValueAtTime(freq, now + i * 0.025);
-          gain.gain.setValueAtTime(0.0001, now + i * 0.025);
-          gain.gain.linearRampToValueAtTime(v * (i === 0 ? 0.2 : 0.11), now + i * 0.025 + 0.008);
-          gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.42);
-          osc.connect(gain);
-          gain.connect(ctx.destination);
-          osc.start(now + i * 0.025);
-          osc.stop(now + 0.44);
-        });
-        break;
-      }
-
-      case 'modal': {
-        const bufferSize = Math.floor(ctx.sampleRate * 0.14);
-        const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-        const data = buffer.getChannelData(0);
-        for (let i = 0; i < bufferSize; i++) {
-          data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
-        }
-        const noise = ctx.createBufferSource();
-        noise.buffer = buffer;
-
-        const filter = ctx.createBiquadFilter();
-        filter.type = 'bandpass';
-        filter.Q.setValueAtTime(4.2, now);
-        filter.frequency.setValueAtTime(140, now);
-        filter.frequency.exponentialRampToValueAtTime(520, now + 0.13);
-
-        const gain = ctx.createGain();
-        gain.gain.setValueAtTime(0.0001, now);
-        gain.gain.linearRampToValueAtTime(v * 0.2, now + 0.035);
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.14);
-
-        noise.connect(filter);
-        filter.connect(gain);
-        gain.connect(ctx.destination);
-        noise.start(now);
-        break;
-      }
-
-      case 'error': {
-        [92.5, 65.41].forEach((freq, i) => {
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          osc.type = 'sine';
-          osc.frequency.setValueAtTime(freq, now + i * 0.085);
-          gain.gain.setValueAtTime(0.0001, now + i * 0.085);
-          gain.gain.linearRampToValueAtTime(v * 0.3, now + i * 0.085 + 0.01);
-          gain.gain.exponentialRampToValueAtTime(0.0001, now + i * 0.085 + 0.13);
-          osc.connect(gain);
-          gain.connect(ctx.destination);
-          osc.start(now + i * 0.085);
-          osc.stop(now + i * 0.085 + 0.15);
-        });
-        break;
-      }
-
-      case 'warning': {
+    try {
+      if (type === 'click') {
+        // Relojoaria mecânica / micro-switch de tungstênio
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         const filter = ctx.createBiquadFilter();
         osc.type = 'triangle';
-        osc.frequency.setValueAtTime(293.66, now);
-        osc.frequency.linearRampToValueAtTime(277.18, now + 0.16);
-        filter.type = 'lowpass';
-        filter.frequency.setValueAtTime(900, now);
+        osc.frequency.setValueAtTime(1450, t);
+        osc.frequency.exponentialRampToValueAtTime(220, t + 0.028);
 
-        gain.gain.setValueAtTime(0.0001, now);
-        gain.gain.linearRampToValueAtTime(v * 0.2, now + 0.015);
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+        filter.type = 'bandpass';
+        filter.frequency.setValueAtTime(1200, t);
+        filter.Q.setValueAtTime(2.5, t);
+
+        gain.gain.setValueAtTime(vol * 0.28, t);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.032);
 
         osc.connect(filter);
         filter.connect(gain);
         gain.connect(ctx.destination);
-        osc.start(now);
-        osc.stop(now + 0.24);
-        break;
-      }
+        osc.start(t);
+        osc.stop(t + 0.035);
+      } else if (type === 'success') {
+        // Acorde institucional grave-médio de confirmação (quinta justa encorpada)
+        [220, 329.63].forEach((freq, idx) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sine';
+          const start = t + idx * 0.075;
+          osc.frequency.setValueAtTime(freq, start);
+          gain.gain.setValueAtTime(0.0001, start);
+          gain.gain.linearRampToValueAtTime(vol * 0.24, start + 0.015);
+          gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.34);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(start);
+          osc.stop(start + 0.36);
+        });
+      } else if (type === 'notification') {
+        // Cristal de quartzo sobressalente e discreto
+        const osc = ctx.createOscillator();
+        const sub = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        sub.type = 'triangle';
+        osc.frequency.setValueAtTime(880, t);
+        sub.frequency.setValueAtTime(440, t);
+        gain.gain.setValueAtTime(0.0001, t);
+        gain.gain.linearRampToValueAtTime(vol * 0.22, t + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.42);
+        osc.connect(gain);
+        sub.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(t);
+        sub.start(t);
+        osc.stop(t + 0.44);
+        sub.stop(t + 0.44);
+      } else if (type === 'whoosh') {
+        // Fechamento magnético suave de cofre executivo
+        const osc = ctx.createOscillator();
+        const filter = ctx.createBiquadFilter();
+        const gain = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(95, t);
+        osc.frequency.exponentialRampToValueAtTime(190, t + 0.14);
 
-      default:
-        break;
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(320, t);
+        filter.frequency.exponentialRampToValueAtTime(680, t + 0.14);
+
+        gain.gain.setValueAtTime(0.0001, t);
+        gain.gain.linearRampToValueAtTime(vol * 0.18, t + 0.04);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(t);
+        osc.stop(t + 0.18);
+      } else if (type === 'error') {
+        // Sub-grave firme e contido
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(110, t);
+        osc.frequency.linearRampToValueAtTime(82, t + 0.22);
+
+        const filter = ctx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(260, t);
+
+        gain.gain.setValueAtTime(vol * 0.26, t);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.24);
+
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(t);
+        osc.stop(t + 0.25);
+      } else if (type === 'warning') {
+        // Pulso eletrônico grave-médio
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(261.63, t);
+        gain.gain.setValueAtTime(vol * 0.22, t);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(t);
+        osc.stop(t + 0.2);
+      }
+    } catch {}
+  }
+
+  initYouTubePlayer(onStateChange) {
+    if (typeof window === 'undefined') return;
+    if (window.YT && window.YT.Player) {
+      this.createYtInstance(onStateChange);
+      return;
+    }
+    const existing = document.getElementById('pontoweb-yt-api');
+    if (!existing) {
+      const tag = document.createElement('script');
+      tag.id = 'pontoweb-yt-api';
+      tag.src = 'https://www.youtube.com/iframe_api';
+      document.body.appendChild(tag);
+    }
+    window.onYouTubeIframeAPIReady = () => {
+      this.createYtInstance(onStateChange);
+    };
+  }
+
+  createYtInstance(onStateChange) {
+    const holder = document.getElementById('pontoweb-yt-player');
+    if (!holder || this.ytPlayer) return;
+    try {
+      this.ytPlayer = new window.YT.Player('pontoweb-yt-player', {
+        height: '120',
+        width: '200',
+        videoId: '77Y3r6hQbKE',
+        playerVars: {
+          autoplay: 0,
+          controls: 0,
+          loop: 1,
+          playlist: '77Y3r6hQbKE',
+          modestbranding: 1,
+          rel: 0,
+        },
+        events: {
+          onReady: (e) => {
+            this.ytReady = true;
+            e.target.setVolume(Math.round(this.prefs.musicVolume * 100));
+            if (this.prefs.musicEnabled) {
+              this.startMusic(onStateChange);
+            }
+          },
+          onStateChange: (e) => {
+            if (e.data === 0) {
+              e.target.seekTo(0);
+              e.target.playVideo();
+            }
+            if (e.data === 1) {
+              this.stopFallbackAmbient();
+              this.isMusicPlaying = true;
+              onStateChange?.(true);
+            }
+          },
+          onError: () => {
+            if (this.prefs.musicEnabled) {
+              this.startFallbackAmbient(onStateChange);
+            }
+          },
+        },
+      });
+    } catch {
+      if (this.prefs.musicEnabled) {
+        this.startFallbackAmbient(onStateChange);
+      }
+    }
+  }
+
+  startMusic(onStateChange) {
+    this.prefs.musicEnabled = true;
+    this.savePrefs();
+    if (this.ytReady && this.ytPlayer && typeof this.ytPlayer.playVideo === 'function') {
+      try {
+        this.ytPlayer.setVolume(Math.round(this.prefs.musicVolume * 100));
+        this.ytPlayer.playVideo();
+        this.isMusicPlaying = true;
+        onStateChange?.(true);
+        // Caso o sandbox bloqueie o iframe do YouTube após 1.5s, ativa fallback sonoro 98 BPM
+        setTimeout(() => {
+          if (this.prefs.musicEnabled && this.ytPlayer?.getPlayerState?.() !== 1) {
+            this.startFallbackAmbient(onStateChange);
+          }
+        }, 1500);
+        return;
+      } catch {}
+    }
+    this.startFallbackAmbient(onStateChange);
+  }
+
+  stopMusic(onStateChange) {
+    this.prefs.musicEnabled = false;
+    this.savePrefs();
+    this.isMusicPlaying = false;
+    if (this.ytReady && this.ytPlayer && typeof this.ytPlayer.pauseVideo === 'function') {
+      try {
+        this.ytPlayer.pauseVideo();
+      } catch {}
+    }
+    this.stopFallbackAmbient();
+    onStateChange?.(false);
+  }
+
+  setMusicVolume(v) {
+    this.prefs.musicVolume = Math.max(0, Math.min(1, v));
+    this.savePrefs();
+    if (this.ytReady && this.ytPlayer && typeof this.ytPlayer.setVolume === 'function') {
+      try {
+        this.ytPlayer.setVolume(Math.round(this.prefs.musicVolume * 100));
+      } catch {}
+    }
+  }
+
+  setSfxVolume(v) {
+    this.prefs.sfxVolume = Math.max(0, Math.min(1, v));
+    this.savePrefs();
+  }
+
+  toggleSfx(enabled) {
+    this.prefs.sfxEnabled = enabled;
+    this.savePrefs();
+  }
+
+  startFallbackAmbient(onStateChange) {
+    if (this.fallbackInterval) return;
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    this.isMusicPlaying = true;
+    onStateChange?.(true);
+
+    const notes = [110, 130.81, 146.83, 164.81, 196];
+    let step = 0;
+    const playPulse = () => {
+      if (!this.prefs.musicEnabled) return;
+      const t = ctx.currentTime;
+      const vol = this.prefs.musicVolume * 0.14;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(notes[step % notes.length], t);
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.linearRampToValueAtTime(vol, t + 0.3);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 2.2);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(t);
+      osc.stop(t + 2.3);
+      step++;
+    };
+    playPulse();
+    this.fallbackInterval = setInterval(playPulse, 2450); // ~98 BPM pulso executivo
+  }
+
+  stopFallbackAmbient() {
+    if (this.fallbackInterval) {
+      clearInterval(this.fallbackInterval);
+      this.fallbackInterval = null;
     }
   }
 }
 
-const soundEngine = new PontoWebAudioEngine();
+const soundEngine = new PontoWebSoundEngine();
 
-/**
- * ============================================================================
- * CAMADA DE DADOS E SEGURANÇA — INTEGRIDADE RELACIONAL COMPLETA
- * ============================================================================
- */
+// ============================================================================
+// 4. CAMADA DE DADOS PERSISTENTE, TRANSAÇÕES, RBAC E REALTIME
+// ============================================================================
+const DB_KEY = 'pontoweb_crm_db_v4';
+const SESSION_KEY = 'pontoweb_crm_session_v4';
+const CHANNEL_NAME = 'pontoweb_crm_sync_channel';
+
 class PontoWebDataEngine {
   constructor() {
+    this.listeners = new Set();
     this.channel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel(CHANNEL_NAME) : null;
-  }
-
-  broadcast(eventType, payload = {}) {
-    const packet = { eventType, payload, ts: Date.now() };
     if (this.channel) {
-      try {
-        this.channel.postMessage(packet);
-      } catch {}
+      this.channel.onmessage = () => this.notifyListeners();
     }
-    try {
-      localStorage.setItem('pontoweb_crm_last_sync', JSON.stringify(packet));
-    } catch {}
-  }
-
-  normalizeDb(raw) {
-    return {
-      version: 4,
-      initializedAt: raw?.initializedAt || new Date().toISOString(),
-      users: Array.isArray(raw?.users) ? raw.users : [],
-      clients: Array.isArray(raw?.clients) ? raw.clients : [],
-      tasks: Array.isArray(raw?.tasks) ? raw.tasks : [],
-      meetings: Array.isArray(raw?.meetings) ? raw.meetings : [],
-      meetingReports: Array.isArray(raw?.meetingReports) ? raw.meetingReports : [],
-      noShowOccurrences: Array.isArray(raw?.noShowOccurrences) ? raw.noShowOccurrences : [],
-      rescheduleRecords: Array.isArray(raw?.rescheduleRecords) ? raw.rescheduleRecords : [],
-      sales: Array.isArray(raw?.sales) ? raw.sales : [],
-      notifications: Array.isArray(raw?.notifications) ? raw.notifications : [],
-      auditLogs: Array.isArray(raw?.auditLogs) ? raw.auditLogs : [],
-    };
-  }
-
-  initializeDatabase() {
-    try {
-      const raw = localStorage.getItem(DB_KEY);
-      if (raw) {
-        const parsed = this.normalizeDb(JSON.parse(raw));
-        const hasAdmin = parsed.users.some((u) => u.email === MASTER_ADMIN_EMAIL && u.role === 'admin');
-        if (hasAdmin) {
-          this.saveDb(parsed, false);
-          return parsed;
+    if (typeof window !== 'undefined') {
+      window.addEventListener('storage', (e) => {
+        if (e.key === DB_KEY || e.key === SESSION_KEY) {
+          this.notifyListeners();
         }
-      }
-    } catch {}
-
-    const now = new Date().toISOString();
-    const initialDb = this.normalizeDb({
-      version: 4,
-      initializedAt: now,
-      users: [
-        {
-          id: generateUUID(),
-          name: 'Pablo — Diretoria PontoWeb',
-          email: MASTER_ADMIN_EMAIL,
-          passwordHash: hashPasswordSync('PontoWeb@2026'),
-          role: 'admin',
-          status: 'active',
-          createdAt: now,
-          updatedAt: now,
-          createdBy: 'SYSTEM_BOOTSTRAP',
-        },
-        {
-          id: generateUUID(),
-          name: 'Rayven — Consultor Comercial',
-          email: INITIAL_SELLER_EMAIL,
-          passwordHash: hashPasswordSync('Vendas@2026'),
-          role: 'seller',
-          status: 'active',
-          createdAt: now,
-          updatedAt: now,
-          createdBy: 'SYSTEM_BOOTSTRAP',
-        },
-      ],
-      auditLogs: [
-        {
-          id: generateUUID(),
-          timestamp: now,
-          actorEmail: 'SYSTEM_BOOTSTRAP',
-          action: 'SYSTEM_INIT',
-          details: 'Banco relacional inicializado com contas oficiais de Administrador e Vendedor.',
-        },
-      ],
-    });
-
-    this.saveDb(initialDb, false);
-    return initialDb;
+      });
+    }
+    this.bootstrap();
   }
 
-  getDb() {
+  subscribe(fn) {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  }
+
+  notifyListeners() {
+    this.listeners.forEach((fn) => fn(this.getState()));
+  }
+
+  broadcast() {
+    this.notifyListeners();
+    try {
+      this.channel?.postMessage({ type: 'DB_UPDATED', ts: Date.now() });
+    } catch {}
+  }
+
+  bootstrap() {
+    const raw = localStorage.getItem(DB_KEY);
+    if (!raw) {
+      const initialDb = {
+        users: [
+          {
+            id: 'usr_pablo_master',
+            name: 'Pablo',
+            email: 'tpablo488@gmail.com',
+            passwordHash: 'PontoWeb@2026',
+            role: 'admin',
+            active: true,
+            deleted: false,
+            createdAt: nowIso(),
+          },
+          {
+            id: 'usr_rayven_seller',
+            name: 'Rayven',
+            email: 'rayvenart3@gmail.com',
+            passwordHash: 'Vendas@2026',
+            role: 'seller',
+            active: true,
+            deleted: false,
+            createdAt: nowIso(),
+          },
+          {
+            id: 'usr_sdr_default',
+            name: 'Equipe SDR',
+            email: 'sdr@pontoweb.com',
+            passwordHash: 'Sdr@2026',
+            role: 'sdr',
+            active: true,
+            deleted: false,
+            createdAt: nowIso(),
+          },
+        ],
+        clients: [],
+        sdrSubmissions: [],
+        tasks: [],
+        meetings: [],
+        meetingReports: [],
+        noShowOccurrences: [],
+        rescheduleRecords: [],
+        sales: [],
+        notifications: [],
+        timeline: [],
+        auditLogs: [],
+      };
+      this.saveState(initialDb);
+    } else {
+      // Garante que o usuário mestre Pablo exista e tenha nome Pablo
+      const db = JSON.parse(raw);
+      let changed = false;
+      const pablo = db.users?.find((u) => u.email.toLowerCase() === 'tpablo488@gmail.com');
+      if (pablo && pablo.name !== 'Pablo') {
+        pablo.name = 'Pablo';
+        changed = true;
+      }
+      if (!db.sdrSubmissions) {
+        db.sdrSubmissions = [];
+        changed = true;
+      }
+      if (changed) this.saveState(db);
+    }
+  }
+
+  getState() {
     try {
       const raw = localStorage.getItem(DB_KEY);
-      if (!raw) return this.initializeDatabase();
-      return this.normalizeDb(JSON.parse(raw));
+      return raw ? JSON.parse(raw) : null;
     } catch {
-      return this.initializeDatabase();
+      return null;
     }
   }
 
-  saveDb(db, shouldBroadcast = true) {
-    localStorage.setItem(DB_KEY, JSON.stringify(db));
-    if (shouldBroadcast) {
-      this.broadcast('DB_UPDATED');
-    }
-    // Hybrid sync: persist to Supabase (fire-and-forget)
-    this.syncToSupabase(db).catch(() => {});
+  saveState(state) {
+    localStorage.setItem(DB_KEY, JSON.stringify(state));
+    this.broadcast();
   }
 
-  async syncToSupabase(db) {
+  getCurrentUser() {
     try {
-      if (Array.isArray(db.users) && db.users.length) {
-        await supabase.from('users').upsert(
-          db.users.map((u) => ({
-            id: u.id,
-            name: u.name,
-            email: u.email,
-            password_hash: u.passwordHash || 'supabase_auth',
-            role: u.role,
-            status: u.status,
-            created_at: u.createdAt,
-            updated_at: u.updatedAt,
-            created_by: u.createdBy,
-            deleted_at: u.deletedAt,
-            deleted_by: u.deletedBy,
-          })),
-          { onConflict: 'id' }
-        );
+      const sessionRaw = localStorage.getItem(SESSION_KEY);
+      if (!sessionRaw) return null;
+      const { userId } = JSON.parse(sessionRaw);
+      const db = this.getState();
+      const user = db?.users?.find((u) => u.id === userId);
+      if (!user || !user.active || user.deleted) {
+        localStorage.removeItem(SESSION_KEY);
+        return null;
       }
-      if (Array.isArray(db.clients) && db.clients.length) {
-        await supabase.from('clients').upsert(
-          db.clients.map((c) => ({
-            id: c.id,
-            name: c.name,
-            segment: c.segment,
-            whatsapp: c.whatsapp,
-            notes: c.notes,
-            assigned_seller_id: c.assignedSellerId,
-            assigned_seller_name: c.assignedSellerName,
-            first_contact_status: c.firstContactStatus,
-            first_contact_at: c.firstContactAt,
-            first_contact_by: c.firstContactBy,
-            active_meeting_id: c.activeMeetingId,
-            meeting_status: c.meetingStatus,
-            meeting_date: c.meetingDate,
-            meeting_time: c.meetingTime,
-            has_sale: c.hasSale,
-            created_at: c.createdAt,
-            updated_at: c.updatedAt,
-            created_by: c.createdBy,
-            history: c.history || [],
-          })),
-          { onConflict: 'id' }
-        );
-      }
-      if (Array.isArray(db.tasks) && db.tasks.length) {
-        await supabase.from('tasks').upsert(
-          db.tasks.map((t) => ({
-            id: t.id,
-            type: t.type,
-            client_id: t.clientId,
-            client_name: t.clientName,
-            assigned_seller_id: t.assignedSellerId,
-            status: t.status,
-            due_date: t.dueDate,
-            created_at: t.createdAt,
-            completed_at: t.completedAt,
-            completed_by: t.completedBy,
-          })),
-          { onConflict: 'id' }
-        );
-      }
-      if (Array.isArray(db.meetings) && db.meetings.length) {
-        await supabase.from('meetings').upsert(
-          db.meetings.map((m) => ({
-            id: m.id,
-            type: m.type,
-            client_id: m.clientId,
-            client_name: m.clientName,
-            client_segment: m.clientSegment,
-            assigned_seller_id: m.assignedSellerId,
-            assigned_seller_name: m.assignedSellerName,
-            scheduled_date: m.scheduledDate,
-            scheduled_time: m.scheduledTime,
-            timezone: m.timezone,
-            status: m.status,
-            reschedule_count: m.rescheduleCount,
-            previous_schedules: m.previousSchedules || [],
-            report_id: m.reportId,
-            created_at: m.createdAt,
-            updated_at: m.updatedAt,
-            completed_at: m.completedAt,
-          })),
-          { onConflict: 'id' }
-        );
-      }
-      if (Array.isArray(db.meetingReports) && db.meetingReports.length) {
-        await supabase.from('meeting_reports').upsert(
-          db.meetingReports.map((r) => ({
-            id: r.id,
-            client_id: r.clientId,
-            client_name: r.clientName,
-            client_segment: r.clientSegment,
-            meeting_id: r.meetingId,
-            seller_id: r.sellerId,
-            seller_name: r.sellerName,
-            submitted_by_id: r.submittedById,
-            submitted_by_name: r.submittedByName,
-            is_read_by_admin: r.isReadByAdmin,
-            read_by_admin_at: r.readByAdminAt,
-            read_by_admin_name: r.readByAdminName,
-            created_at: r.createdAt,
-            section_a: r.sectionA,
-            sale_info: r.saleInfo,
-            section_b: r.sectionB,
-            section_c: r.sectionC,
-            section_f: r.sectionF,
-          })),
-          { onConflict: 'id' }
-        );
-      }
-      if (Array.isArray(db.sales) && db.sales.length) {
-        await supabase.from('sales').upsert(db.sales.map((s) => ({
-          id: s.id,
-          client_id: s.clientId,
-          status: s.status,
-          payment_structure: s.paymentStructure,
-          sale_value: s.saleValue,
-          sent_value: s.sentValue,
-          payment_method: s.paymentMethod,
-          created_at: s.createdAt,
-        })), { onConflict: 'id' });
-      }
-      if (Array.isArray(db.notifications) && db.notifications.length) {
-        await supabase.from('notifications').upsert(db.notifications.map((n) => ({
-          id: n.id,
-          user_id: n.userId,
-          title: n.title,
-          message: n.message,
-          type: n.type,
-          related_id: n.relatedId,
-          read: n.read,
-          created_at: n.createdAt,
-        })), { onConflict: 'id' });
-      }
-      if (Array.isArray(db.auditLogs) && db.auditLogs.length) {
-        await supabase.from('audit_logs').upsert(db.auditLogs.map((a) => ({
-          id: a.id,
-          timestamp: a.timestamp,
-          actor_email: a.actorEmail,
-          action: a.action,
-          details: a.details,
-          extra: a.extra || null,
-        })), { onConflict: 'id' });
-      }
-    } catch (e) {
-      console.warn('syncToSupabase failed', e?.message);
+      return user;
+    } catch {
+      return null;
     }
   }
 
-  async syncFromSupabase() {
-    try {
-      const [users, clients, tasks, meetings, reports, sales, notifications, audits] = await Promise.all([
-        supabase.from('users').select('*'),
-        supabase.from('clients').select('*'),
-        supabase.from('tasks').select('*'),
-        supabase.from('meetings').select('*'),
-        supabase.from('meeting_reports').select('*'),
-        supabase.from('sales').select('*'),
-        supabase.from('notifications').select('*'),
-        supabase.from('audit_logs').select('*'),
-      ]);
+  login(email, password) {
+    const cleanEmail = String(email || '').trim().toLowerCase();
+    const db = this.getState();
+    const user = db.users.find((u) => u.email.toLowerCase() === cleanEmail);
+    if (!user) throw new Error('E-mail ou senha inválidos.');
+    if (user.deleted) throw new Error('Esta conta foi excluída e não possui mais acesso.');
+    if (!user.active) throw new Error('Esta conta está desativada. Contate o Pablo.');
+    if (user.passwordHash !== password) throw new Error('E-mail ou senha inválidos.');
 
-      const db = this.getDb();
-      if (users.data?.length) db.users = users.data.map((u) => ({
-        id: u.id, name: u.name, email: u.email, passwordHash: u.password_hash,
-        role: u.role, status: u.status, createdAt: u.created_at, updatedAt: u.updated_at,
-        createdBy: u.created_by, deletedAt: u.deleted_at, deletedBy: u.deleted_by,
-      }));
-      if (clients.data?.length) db.clients = clients.data.map((c) => ({
-        id: c.id, name: c.name, segment: c.segment, whatsapp: c.whatsapp, notes: c.notes,
-        assignedSellerId: c.assigned_seller_id, assignedSellerName: c.assigned_seller_name,
-        firstContactStatus: c.first_contact_status, firstContactAt: c.first_contact_at,
-        firstContactBy: c.first_contact_by, activeMeetingId: c.active_meeting_id,
-        meetingStatus: c.meeting_status, meetingDate: c.meeting_date, meetingTime: c.meeting_time,
-        hasSale: c.has_sale, createdAt: c.created_at, updatedAt: c.updated_at,
-        createdBy: c.created_by, history: c.history || [],
-      }));
-      if (tasks.data?.length) db.tasks = tasks.data.map((t) => ({
-        id: t.id, type: t.type, clientId: t.client_id, clientName: t.client_name,
-        assignedSellerId: t.assigned_seller_id, status: t.status, dueDate: t.due_date,
-        createdAt: t.created_at, completedAt: t.completed_at, completedBy: t.completed_by,
-      }));
-      if (meetings.data?.length) db.meetings = meetings.data.map((m) => ({
-        id: m.id, type: m.type, clientId: m.client_id, clientName: m.client_name,
-        clientSegment: m.client_segment, assignedSellerId: m.assigned_seller_id,
-        assignedSellerName: m.assigned_seller_name, scheduledDate: m.scheduled_date,
-        scheduledTime: m.scheduled_time, timezone: m.timezone, status: m.status,
-        rescheduleCount: m.reschedule_count, previousSchedules: m.previous_schedules || [],
-        reportId: m.report_id, createdAt: m.created_at, updatedAt: m.updated_at,
-        completedAt: m.completed_at,
-      }));
-      if (reports.data?.length) db.meetingReports = reports.data.map((r) => ({
-        id: r.id, clientId: r.client_id, clientName: r.client_name, clientSegment: r.client_segment,
-        meetingId: r.meeting_id, sellerId: r.seller_id, sellerName: r.seller_name,
-        submittedById: r.submitted_by_id, submittedByName: r.submitted_by_name,
-        isReadByAdmin: r.is_read_by_admin, readByAdminAt: r.read_by_admin_at,
-        readByAdminName: r.read_by_admin_name, createdAt: r.created_at,
-        sectionA: r.section_a, saleInfo: r.sale_info, sectionB: r.section_b,
-        sectionC: r.section_c, sectionF: r.section_f,
-      }));
-      if (sales.data?.length) db.sales = sales.data.map((s) => ({
-        id: s.id, clientId: s.client_id, status: s.status, paymentStructure: s.payment_structure,
-        saleValue: s.sale_value, sentValue: s.sent_value, paymentMethod: s.payment_method,
-        createdAt: s.created_at,
-      }));
-      if (notifications.data?.length) db.notifications = notifications.data.map((n) => ({
-        id: n.id, userId: n.user_id, title: n.title, message: n.message, type: n.type,
-        relatedId: n.related_id, read: n.read, createdAt: n.created_at,
-      }));
-      if (audits.data?.length) db.auditLogs = audits.data.map((a) => ({
-        id: a.id, timestamp: a.timestamp, actorEmail: a.actor_email, action: a.action,
-        details: a.details, extra: a.extra,
-      }));
-      this.saveDb(db, false);
-    } catch (e) {
-      console.warn('syncFromSupabase failed', e?.message);
-    }
+    localStorage.setItem(SESSION_KEY, JSON.stringify({ userId: user.id, loginAt: nowIso() }));
+    this.logAudit(db, user.id, 'LOGIN', `Acesso realizado por ${user.name}`);
+    this.saveState(db);
+    return user;
   }
 
-  appendAudit(db, actorEmail, action, details, extra = {}) {
+  logout() {
+    const user = this.getCurrentUser();
+    if (user) {
+      const db = this.getState();
+      this.logAudit(db, user.id, 'LOGOUT', `Sessão encerrada por ${user.name}`);
+      this.saveState(db);
+    }
+    localStorage.removeItem(SESSION_KEY);
+    this.broadcast();
+  }
+
+  resetPassword(email, newPassword) {
+    const cleanEmail = String(email || '').trim().toLowerCase();
+    if (!newPassword || newPassword.length < 6) {
+      throw new Error('A nova senha deve ter pelo menos 6 caracteres.');
+    }
+    const db = this.getState();
+    const user = db.users.find((u) => u.email.toLowerCase() === cleanEmail && !u.deleted);
+    if (!user) throw new Error('Nenhuma conta ativa encontrada com este e-mail.');
+    if (!user.active) throw new Error('Conta desativada. Solicite reativação ao Pablo.');
+    user.passwordHash = newPassword;
+    this.logAudit(db, user.id, 'PASSWORD_RESET', `Senha redefinida para ${user.email}`);
+    this.saveState(db);
+    return true;
+  }
+
+  logAudit(db, actorId, action, details) {
     db.auditLogs.unshift({
-      id: generateUUID(),
-      timestamp: new Date().toISOString(),
-      actorEmail,
+      id: generateId('aud'),
+      actorId,
       action,
       details,
-      ...extra,
+      createdAt: nowIso(),
     });
-    if (db.auditLogs.length > 500) {
-      db.auditLogs = db.auditLogs.slice(0, 500);
-    }
   }
 
-  pushNotification(db, targetUserId, title, message, type = 'info', relatedId = null) {
+  pushNotification(db, recipientId, title, message, meta = {}) {
     db.notifications.unshift({
-      id: generateUUID(),
-      userId: targetUserId,
+      id: generateId('ntf'),
+      recipientId,
       title,
       message,
-      type,
-      relatedId,
+      meta,
       read: false,
-      createdAt: new Date().toISOString(),
+      createdAt: nowIso(),
     });
-    if (db.notifications.length > 300) {
-      db.notifications = db.notifications.slice(0, 300);
-    }
   }
 
-  resolveUserLabel(db, userId, fallbackName = '') {
-    if (!userId) return fallbackName || 'Não atribuído';
-    const user = db.users.find((u) => u.id === userId);
-    if (!user) {
-      return fallbackName ? `${fallbackName} (conta excluída)` : 'Usuário (conta excluída)';
-    }
-    if (user.status === 'deleted') {
-      return `${user.name} (conta excluída)`;
-    }
-    if (user.status === 'inactive') {
-      return `${user.name} (desativada)`;
-    }
-    return user.name;
-  }
-
-  async authenticate(email, password) {
-    const cleanEmail = (email || '').trim().toLowerCase();
-    if (!cleanEmail || !password) {
-      return { ok: false, code: 'VALIDATION_ERROR', message: 'Informe e-mail e senha para acessar.' };
-    }
-
-    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-      email: cleanEmail,
-      password,
+  pushTimeline(db, clientId, actorId, type, title, description, meta = {}) {
+    db.timeline.unshift({
+      id: generateId('tml'),
+      clientId,
+      actorId,
+      type,
+      title,
+      description,
+      meta,
+      createdAt: nowIso(),
     });
-
-    if (authError || !authData?.user) {
-      return { ok: false, code: 'INVALID_CREDENTIALS', message: 'Credenciais inválidas. Verifique seus dados.' };
-    }
-
-    const { data: profile, error: profileError } = await supabase
-      .from('users')
-      .select('*')
-      .eq('id', authData.user.id)
-      .single();
-
-    if (profileError || !profile) {
-      await supabase.auth.signOut();
-      return { ok: false, code: 'USER_NOT_FOUND', message: 'Perfil de usuário não encontrado.' };
-    }
-
-    if (profile.status === 'deleted') {
-      await supabase.auth.signOut();
-      return { ok: false, code: 'ACCOUNT_DELETED', message: 'Esta conta foi excluída e não possui mais acesso.' };
-    }
-
-    if (profile.status === 'inactive') {
-      await supabase.auth.signOut();
-      return {
-        ok: false,
-        code: 'ACCOUNT_DISABLED',
-        message: 'Sua conta está desativada. Contate o administrador da PontoWeb.',
-      };
-    }
-
-    const { passwordHash, ...safeUser } = profile;
-    return { ok: true, user: safeUser, session: authData.session };
   }
 
-  async validateSession() {
-    try {
-      const { data } = await supabase.auth.getSession();
-      if (!data?.session) return { valid: false, reason: 'NO_SESSION' };
-
-      const { data: profile, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', data.session.user.id)
-        .single();
-
-      if (error || !profile) {
-        await supabase.auth.signOut();
-        return { valid: false, reason: 'USER_NOT_FOUND' };
-      }
-
-      if (profile.status !== 'active') {
-        await supabase.auth.signOut();
-        return {
-          valid: false,
-          reason: 'ACCOUNT_REVOKED',
-          message: 'Sua sessão foi encerrada imediatamente porque esta conta foi desativada ou excluída.',
-        };
-      }
-
-      const { passwordHash, ...safeUser } = profile;
-      return { valid: true, user: safeUser, session: data.session };
-    } catch {
-      await supabase.auth.signOut();
-      return { valid: false, reason: 'CORRUPT_SESSION' };
+  // SDR cria lead para revisão do Pablo (sem selecionar vendedor)
+  submitLeadFromSdr(actor, payload) {
+    if (!actor || actor.role !== 'sdr' || !actor.active) {
+      throw new Error('Permissão negada: apenas contas SDR ativas podem enviar leads nesta fila.');
     }
-  }
-
-  async clearSession(actorEmail = null) {
-    if (actorEmail) {
-      try {
-        await supabase.from('audit_logs').insert({
-          actor_email: actorEmail,
-          action: 'LOGOUT',
-          details: 'Sessão encerrada pelo usuário.',
-        });
-      } catch {}
-    }
-    await supabase.auth.signOut();
-  }
-
-  requestPasswordRecovery(email) {
-    const cleanEmail = (email || '').trim().toLowerCase();
-    if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
-      return { ok: false, message: 'Informe um endereço de e-mail válido.' };
+    const { name, segment, whatsapp, meetingDate, meetingTime, notes } = payload;
+    if (!name?.trim() || !segment?.trim() || !whatsapp?.trim() || !meetingDate || !meetingTime) {
+      throw new Error('Preencha todos os campos obrigatórios antes de enviar ao Pablo.');
     }
 
-    const db = this.getDb();
-    const user = db.users.find((u) => u.email.toLowerCase() === cleanEmail);
-
-    if (!user || user.status !== 'active') {
-      this.appendAudit(db, cleanEmail, 'PASSWORD_RECOVERY_REQUEST', 'Solicitação de recuperação recebida.');
-      this.saveDb(db);
-      return {
-        ok: true,
-        message: 'Se o e-mail estiver ativo na base da PontoWeb, as instruções de redefinição foram processadas.',
-      };
-    }
-
-    const recoveryCode = Math.floor(100000 + Math.random() * 900000).toString();
-    user.recoveryToken = recoveryCode;
-    user.recoveryExpiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-
-    this.appendAudit(db, cleanEmail, 'PASSWORD_RECOVERY_ISSUED', 'Token temporário de redefinição emitido.');
-    this.saveDb(db);
-
-    return {
-      ok: true,
-      message: 'Código de recuperação gerado com segurança (válido por 15 minutos).',
-      demoCode: recoveryCode,
-    };
-  }
-
-  resetPasswordWithCode(email, code, newPassword) {
-    const cleanEmail = (email || '').trim().toLowerCase();
-    if (!newPassword || newPassword.length < 8) {
-      return { ok: false, message: 'A nova senha deve ter no mínimo 8 caracteres.' };
-    }
-
-    const db = this.getDb();
-    const user = db.users.find((u) => u.email.toLowerCase() === cleanEmail && u.status === 'active');
-
-    if (!user || !user.recoveryToken || user.recoveryToken !== code.trim()) {
-      return { ok: false, message: 'Código de verificação inválido ou expirado.' };
-    }
-
-    if (new Date(user.recoveryExpiresAt).getTime() < Date.now()) {
-      return { ok: false, message: 'O código de recuperação expirou. Solicite um novo.' };
-    }
-
-    user.passwordHash = hashPasswordSync(newPassword);
-    delete user.recoveryToken;
-    delete user.recoveryExpiresAt;
-    user.updatedAt = new Date().toISOString();
-
-    this.appendAudit(db, cleanEmail, 'PASSWORD_RESET_COMPLETED', 'Senha redefinida com sucesso via token seguro.');
-    this.saveDb(db);
-
-    return { ok: true, message: 'Senha atualizada com sucesso! Você já pode entrar.' };
-  }
-
-  async createSellerAccount({ name, email, password, createdBy = 'PUBLIC_REGISTER' }) {
-    const cleanName = (name || '').trim();
-    const cleanEmail = (email || '').trim().toLowerCase();
-
-    if (cleanName.length < 2) {
-      return { ok: false, message: 'Informe o nome completo (mínimo 2 caracteres).' };
-    }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
-      return { ok: false, message: 'Informe um e-mail válido.' };
-    }
-    if (!password || password.length < 8) {
-      return { ok: false, message: 'A senha deve possuir pelo menos 8 caracteres.' };
-    }
-
-    const { data: existing } = await supabase.from('users').select('id').eq('email', cleanEmail).maybeSingle();
-    if (existing) {
-      return { ok: false, message: 'Já existe uma conta vinculada a este e-mail.' };
-    }
-
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email: cleanEmail,
-      password,
-    });
-
-    if (authError || !authData?.user) {
-      return { ok: false, message: authError?.message || 'Erro ao criar conta.' };
-    }
-
-    const { error: profileError } = await supabase.from('users').insert({
-      id: authData.user.id,
-      name: cleanName,
-      email: cleanEmail,
-      password_hash: 'supabase_auth',
-      role: 'seller',
-      status: 'active',
-      created_by: createdBy,
-    });
-
-    if (profileError) {
-      return { ok: false, message: profileError.message };
-    }
-
-    try {
-      await supabase.from('audit_logs').insert({
-        actor_email: createdBy,
-        action: 'USER_CREATED',
-        details: `Nova conta criada para ${cleanEmail} com perfil obrigatório VENDEDOR.`,
-      });
-    } catch {}
-
-    return { ok: true, user: { id: authData.user.id, name: cleanName, email: cleanEmail, role: 'seller', status: 'active' } };
-  }
-
-  setUserStatus(actorUser, targetUserId, newStatus) {
-    if (!actorUser || actorUser.role !== 'admin') {
-      return { ok: false, message: 'Acesso negado: apenas administradores podem alterar contas.' };
-    }
-    if (actorUser.id === targetUserId) {
-      return { ok: false, message: 'A conta administrativa não pode desativar a si própria.' };
-    }
-
-    const db = this.getDb();
-    const target = db.users.find((u) => u.id === targetUserId);
-    if (!target) {
-      return { ok: false, message: 'Usuário não encontrado.' };
-    }
-    if (target.status === 'deleted') {
-      return { ok: false, message: 'Contas excluídas não podem ser reativadas.' };
-    }
-
-    target.status = newStatus;
-    target.updatedAt = new Date().toISOString();
-
-    this.appendAudit(
-      db,
-      actorUser.email,
-      newStatus === 'inactive' ? 'ACCOUNT_DISABLED' : 'ACCOUNT_REACTIVATED',
-      `Conta ${target.email} alterada para status: ${newStatus.toUpperCase()}.`
-    );
-    this.saveDb(db);
-    this.broadcast('USER_STATUS_CHANGED', { targetUserId, newStatus });
-
-    return { ok: true };
-  }
-
-  deleteUserAccount(actorUser, targetUserId, transferToSellerId = '') {
-    if (!actorUser || actorUser.role !== 'admin') {
-      return { ok: false, message: 'Acesso negado: apenas administradores podem excluir contas.' };
-    }
-    if (actorUser.id === targetUserId) {
-      return { ok: false, message: 'A conta administrativa não pode excluir a si própria.' };
-    }
-
-    const db = this.getDb();
-    const target = db.users.find((u) => u.id === targetUserId);
-    if (!target) {
-      return { ok: false, message: 'Usuário não encontrado.' };
-    }
-    if (target.status === 'deleted') {
-      return { ok: false, message: 'Esta conta já se encontra excluída.' };
-    }
-
-    const now = new Date().toISOString();
-    const activeClients = db.clients.filter((c) => c.assignedSellerId === targetUserId && !c.hasSale);
-    let transferredCount = 0;
-
-    if (transferToSellerId) {
-      const destSeller = db.users.find(
-        (u) => u.id === transferToSellerId && u.role === 'seller' && u.status === 'active'
-      );
-      if (!destSeller) {
-        return { ok: false, message: 'Vendedor de destino para transferência inválido ou inativo.' };
-      }
-
-      activeClients.forEach((client) => {
-        client.assignedSellerId = destSeller.id;
-        client.assignedSellerName = destSeller.name;
-        client.updatedAt = now;
-        client.history.unshift({
-          id: generateUUID(),
-          type: 'REASSIGNED',
-          title: 'Cliente transferido por exclusão de conta',
-          description: `Transferido de ${target.name} (conta excluída) para ${destSeller.name} por ${actorUser.name}.`,
-          actorName: actorUser.name,
-          actorRole: 'admin',
-          timestamp: now,
-        });
-
-        const pendingTask = db.tasks.find((t) => t.clientId === client.id && t.status === 'pending');
-        if (pendingTask) pendingTask.assignedSellerId = destSeller.id;
-
-        const meeting = db.meetings.find((m) => m.id === client.activeMeetingId);
-        if (meeting && meeting.status === 'scheduled') {
-          meeting.assignedSellerId = destSeller.id;
-          meeting.assignedSellerName = destSeller.name;
-        }
-        transferredCount += 1;
-      });
-
-      if (transferredCount > 0) {
-        this.pushNotification(
-          db,
-          destSeller.id,
-          'Carteira transferida para você',
-          `${transferredCount} cliente(s) em andamento foram transferidos para sua carteira.`,
-          'assignment',
-          null
-        );
-      }
-    }
-
-    target.status = 'deleted';
-    target.deletedAt = now;
-    target.deletedBy = actorUser.email;
-    target.updatedAt = now;
-
-    this.appendAudit(
-      db,
-      actorUser.email,
-      'ACCOUNT_DELETED',
-      `Conta ${target.name} (${target.email}) excluída logicamente. ${transferredCount} cliente(s) transferido(s). Histórico comercial preservado.`
-    );
-    this.saveDb(db);
-    this.broadcast('USER_STATUS_CHANGED', { targetUserId, newStatus: 'deleted' });
-
-    return { ok: true, transferredCount };
-  }
-
-  /**
-   * TRANSAÇÃO ATÔMICA DE CADASTRO E DISTRIBUIÇÃO DE CLIENTE
-   */
-  createAndDistributeClient(actorUser, payload) {
-    if (!actorUser || actorUser.role !== 'admin') {
-      return { ok: false, message: 'Permissão negada: somente administradores podem cadastrar clientes.' };
-    }
-
-    const name = (payload.name || '').trim();
-    const segment = (payload.segment || '').trim();
-    const whatsappRaw = (payload.whatsapp || '').trim();
-    const whatsappDigits = sanitizeWhatsAppNumber(whatsappRaw);
-    const meetingDate = (payload.meetingDate || '').trim();
-    const meetingTime = (payload.meetingTime || '').trim();
-    const sellerId = (payload.sellerId || '').trim();
-    const notes = (payload.notes || '').trim();
-
-    if (name.length < 2) return { ok: false, message: 'Informe o nome completo do cliente.' };
-    if (segment.length < 2) return { ok: false, message: 'Informe o segmento da empresa.' };
-    if (whatsappDigits.length < 12) {
-      return { ok: false, message: 'Informe o WhatsApp completo com código do país e DDD (ex: +55 11 99999-9999).' };
-    }
-    if (!meetingDate) return { ok: false, message: 'Selecione a data da reunião de vendas.' };
-    if (!meetingTime) return { ok: false, message: 'Selecione o horário da reunião de vendas.' };
-    if (!sellerId) return { ok: false, message: 'Selecione um vendedor responsável ativo.' };
-
-    const db = this.getDb();
-    const seller = db.users.find((u) => u.id === sellerId && u.role === 'seller' && u.status === 'active');
-    if (!seller) {
-      return { ok: false, message: 'O vendedor selecionado não está ativo ou não existe.' };
-    }
-
-    const duplicateMeeting = db.meetings.find(
-      (m) =>
-        m.assignedSellerId === seller.id &&
-        m.scheduledDate === meetingDate &&
-        m.scheduledTime === meetingTime &&
-        m.status === 'scheduled'
-    );
-    if (duplicateMeeting) {
-      return {
-        ok: false,
-        message: `Conflito de agenda: ${seller.name} já possui reunião agendada neste mesmo dia e horário.`,
-      };
-    }
-
-    const now = new Date().toISOString();
-    const clientId = generateUUID();
-    const taskId = generateUUID();
-    const meetingId = generateUUID();
-
-    const newClient = {
-      id: clientId,
-      name,
-      segment,
-      whatsapp: `+${whatsappDigits}`,
-      notes,
-      assignedSellerId: seller.id,
-      assignedSellerName: seller.name,
-      firstContactStatus: 'pending',
-      firstContactAt: null,
-      firstContactBy: null,
-      activeMeetingId: meetingId,
-      meetingStatus: 'scheduled',
+    const db = this.getState();
+    const submission = {
+      id: generateId('sdr_lead'),
+      name: name.trim(),
+      segment: segment.trim(),
+      whatsapp: whatsapp.trim(),
       meetingDate,
       meetingTime,
-      hasSale: false,
-      createdAt: now,
-      updatedAt: now,
-      createdBy: actorUser.email,
-      history: [
-        {
-          id: generateUUID(),
-          type: 'MEETING_SCHEDULED',
-          title: 'Reunião de Vendas agendada',
-          description: `Agendada para ${formatMeetingSchedule(meetingDate, meetingTime, true)} (fuso America/Sao_Paulo).`,
-          actorName: actorUser.name,
-          actorRole: 'admin',
-          timestamp: now,
-        },
-        {
-          id: generateUUID(),
-          type: 'ASSIGNED',
-          title: 'Cliente distribuído ao vendedor',
-          description: `Atribuído para ${seller.name} (${seller.email}) com tarefa de primeiro contato criada.`,
-          actorName: actorUser.name,
-          actorRole: 'admin',
-          timestamp: now,
-        },
-        {
-          id: generateUUID(),
-          type: 'CREATED',
-          title: 'Cliente cadastrado no PontoWeb CRM',
-          description: `Segmento: ${segment} | WhatsApp: +${whatsappDigits}`,
-          actorName: actorUser.name,
-          actorRole: 'admin',
-          timestamp: now,
-        },
-      ],
+      notes: (notes || '').trim(),
+      submittedById: actor.id,
+      status: 'pending_pablo', // pending_pablo | approved
+      createdAt: nowIso(),
     };
 
-    const newTask = {
-      id: taskId,
-      type: 'FIRST_CONTACT',
-      clientId,
-      clientName: name,
+    db.sdrSubmissions.unshift(submission);
+
+    // Notifica Pablo
+    const pabloUsers = db.users.filter((u) => u.role === 'admin' && u.active && !u.deleted);
+    pabloUsers.forEach((p) => {
+      this.pushNotification(
+        db,
+        p.id,
+        'Novo lead enviado pelo SDR',
+        `${actor.name} enviou o cliente "${submission.name}" (${submission.segment}) para sua revisão e distribuição.`,
+        { submissionId: submission.id }
+      );
+    });
+
+    this.logAudit(db, actor.id, 'SDR_LEAD_SUBMITTED', `SDR enviou lead ${submission.name} ao Pablo`);
+    this.saveState(db);
+    return submission;
+  }
+
+  // Pablo aprova, edita e distribui um lead vindo do SDR
+  approveSdrSubmission(actor, submissionId, editedPayload) {
+    if (!actor || actor.role !== 'admin' || !actor.active) {
+      throw new Error('Apenas o Pablo pode revisar e distribuir leads do SDR.');
+    }
+    const db = this.getState();
+    const sub = db.sdrSubmissions.find((s) => s.id === submissionId);
+    if (!sub || sub.status !== 'pending_pablo') {
+      throw new Error('Este lead já foi processado ou não foi encontrado.');
+    }
+
+    const created = this.createAndAssignClientInternal(db, actor, {
+      ...editedPayload,
+      originSdrId: sub.submittedById,
+    });
+
+    sub.status = 'approved';
+    sub.approvedAt = nowIso();
+    sub.approvedClientId = created.client.id;
+
+    this.logAudit(
+      db,
+      actor.id,
+      'SDR_LEAD_APPROVED',
+      `Pablo revisou e distribuiu "${created.client.name}" para o vendedor.`
+    );
+    this.saveState(db);
+    return created;
+  }
+
+  // Cadastro direto pelo Pablo (transação atômica)
+  createAndAssignClient(actor, payload) {
+    if (!actor || actor.role !== 'admin' || !actor.active) {
+      throw new Error('Apenas o Pablo pode cadastrar e distribuir clientes.');
+    }
+    const db = this.getState();
+    const result = this.createAndAssignClientInternal(db, actor, payload);
+    this.saveState(db);
+    return result;
+  }
+
+  createAndAssignClientInternal(db, actor, payload) {
+    const { name, segment, whatsapp, meetingDate, meetingTime, sellerId, notes, originSdrId } = payload;
+    if (!name?.trim() || !segment?.trim() || !whatsapp?.trim() || !meetingDate || !meetingTime || !sellerId) {
+      throw new Error('Todos os campos obrigatórios devem ser preenchidos.');
+    }
+
+    const seller = db.users.find((u) => u.id === sellerId && u.role === 'seller' && u.active && !u.deleted);
+    if (!seller) {
+      throw new Error('Selecione um vendedor ativo válido.');
+    }
+
+    const clientId = generateId('cli');
+    const meetingId = generateId('mtg');
+    const taskId = generateId('tsk');
+    const ts = nowIso();
+
+    const client = {
+      id: clientId,
+      name: name.trim(),
+      segment: segment.trim(),
+      whatsapp: whatsapp.trim(),
+      notes: (notes || '').trim(),
       assignedSellerId: seller.id,
+      createdById: actor.id,
+      originSdrId: originSdrId || null,
+      firstContactStatus: 'pending',
+      firstContactAt: null,
+      firstContactById: null,
+      currentMeetingId: meetingId,
+      createdAt: ts,
+    };
+
+    const task = {
+      id: taskId,
+      clientId,
+      sellerId: seller.id,
+      type: 'FIRST_CONTACT',
       status: 'pending',
-      dueDate: meetingDate,
-      createdAt: now,
+      createdAt: ts,
       completedAt: null,
     };
 
-    const newMeeting = {
+    const meeting = {
       id: meetingId,
-      type: 'SALES_MEETING',
       clientId,
-      clientName: name,
-      clientSegment: segment,
-      assignedSellerId: seller.id,
-      assignedSellerName: seller.name,
+      sellerId: seller.id,
       scheduledDate: meetingDate,
       scheduledTime: meetingTime,
-      timezone: 'America/Sao_Paulo',
-      status: 'scheduled',
+      status: 'scheduled', // scheduled | completed | no_show
       rescheduleCount: 0,
-      previousSchedules: [],
-      reportId: null,
-      createdAt: now,
-      updatedAt: now,
+      createdAt: ts,
+      completedAt: null,
     };
 
-    db.clients.unshift(newClient);
-    db.tasks.unshift(newTask);
-    db.meetings.unshift(newMeeting);
+    db.clients.unshift(client);
+    db.tasks.unshift(task);
+    db.meetings.unshift(meeting);
+
+    this.pushTimeline(
+      db,
+      clientId,
+      actor.id,
+      'CREATED_AND_ASSIGNED',
+      'Cliente cadastrado e distribuído',
+      `Atribuído por ${actor.name} para ${seller.name}. Reunião de vendas agendada para ${formatDateWithWeekdayBR(meetingDate, meetingTime)}.`
+    );
 
     this.pushNotification(
       db,
       seller.id,
       'Novo cliente atribuído',
-      `${name} (${segment}) — Reunião em ${formatMeetingSchedule(meetingDate, meetingTime, true)}.`,
-      'assignment',
-      clientId
-    );
-
-    this.appendAudit(
-      db,
-      actorUser.email,
-      'CLIENT_DISTRIBUTED',
-      `Cliente "${name}" cadastrado e distribuído para ${seller.email} com Reunião de Vendas em ${meetingDate} ${meetingTime}.`,
-      { clientId, sellerId: seller.id }
-    );
-
-    this.saveDb(db);
-    return { ok: true, client: newClient, task: newTask, meeting: newMeeting };
-  }
-
-  /**
-   * CONFIRMAÇÃO DE PRIMEIRO CONTATO (EXCLUSIVA DO VENDEDOR)
-   */
-  confirmFirstContact(actorUser, clientId) {
-    if (!actorUser || actorUser.role !== 'seller') {
-      return {
-        ok: false,
-        message: 'Apenas o vendedor responsável pode confirmar a realização do primeiro contato.',
-      };
-    }
-
-    const db = this.getDb();
-    const client = db.clients.find((c) => c.id === clientId);
-
-    if (!client) {
-      return { ok: false, message: 'Cliente não encontrado.' };
-    }
-
-    if (client.assignedSellerId !== actorUser.id) {
-      return { ok: false, message: 'Você não tem permissão para registrar contato deste cliente.' };
-    }
-
-    if (client.firstContactStatus === 'completed') {
-      return {
-        ok: true,
-        alreadyCompleted: true,
-        message: 'Este primeiro contato já foi confirmado anteriormente.',
-      };
-    }
-
-    const now = new Date().toISOString();
-    client.firstContactStatus = 'completed';
-    client.firstContactAt = now;
-    client.firstContactBy = actorUser.name;
-    client.updatedAt = now;
-
-    const task = db.tasks.find((t) => t.clientId === clientId && t.type === 'FIRST_CONTACT');
-    if (task && task.status !== 'completed') {
-      task.status = 'completed';
-      task.completedAt = now;
-      task.completedBy = actorUser.name;
-    }
-
-    client.history.unshift({
-      id: generateUUID(),
-      type: 'FIRST_CONTACT',
-      title: 'Primeiro contato confirmado',
-      description: `Declaração operacional registrada por ${actorUser.name} em ${formatSaoPauloDateTime(now)}.`,
-      actorName: actorUser.name,
-      actorRole: actorUser.role,
-      timestamp: now,
-    });
-
-    this.appendAudit(
-      db,
-      actorUser.email,
-      'FIRST_CONTACT_CONFIRMED',
-      `Primeiro contato confirmado para o cliente "${client.name}" por ${actorUser.name}.`,
+      `Você recebeu ${client.name} (${client.segment}). Primeiro contato pendente — call marcada para ${formatDateWithWeekdayBR(meetingDate, meetingTime)}.`,
       { clientId }
     );
 
-    this.saveDb(db);
-    return { ok: true, alreadyCompleted: false, client };
+    this.logAudit(db, actor.id, 'CLIENT_ASSIGNED', `Cliente ${client.name} atribuído a ${seller.name}`);
+    return { client, task, meeting };
   }
 
-  /**
-   * REATRIBUIÇÃO ADMINISTRATIVA ENTRE VENDEDORES ATIVOS
-   */
-  reassignClient(actorUser, clientId, newSellerId) {
-    if (!actorUser || actorUser.role !== 'admin') {
-      return { ok: false, message: 'Apenas administradores podem reatribuir clientes.' };
+  // Confirmação de 1º contato (exclusivo do vendedor, idempotente)
+  confirmFirstContact(actor, clientId) {
+    if (!actor || actor.role !== 'seller' || !actor.active) {
+      throw new Error('Apenas o vendedor responsável pode confirmar o primeiro contato.');
     }
-
-    const db = this.getDb();
+    const db = this.getState();
     const client = db.clients.find((c) => c.id === clientId);
-    if (!client) return { ok: false, message: 'Cliente não encontrado.' };
-
-    if (client.assignedSellerId === newSellerId) {
-      return { ok: false, message: 'O cliente já está atribuído a este vendedor.' };
+    if (!client) throw new Error('Cliente não encontrado.');
+    if (client.assignedSellerId !== actor.id) {
+      throw new Error('Você não tem permissão para alterar este cliente.');
+    }
+    if (client.firstContactStatus === 'done') {
+      return client; // Idempotente: impede duplicidade
     }
 
-    const newSeller = db.users.find((u) => u.id === newSellerId && u.role === 'seller' && u.status === 'active');
-    if (!newSeller) {
-      return { ok: false, message: 'Selecione um vendedor ativo válido para transferência.' };
+    const ts = nowIso();
+    client.firstContactStatus = 'done';
+    client.firstContactAt = ts;
+    client.firstContactById = actor.id;
+
+    const task = db.tasks.find((t) => t.clientId === clientId && t.type === 'FIRST_CONTACT');
+    if (task) {
+      task.status = 'done';
+      task.completedAt = ts;
     }
 
-    const previousSellerName = this.resolveUserLabel(db, client.assignedSellerId, client.assignedSellerName);
-    const now = new Date().toISOString();
+    this.pushTimeline(
+      db,
+      clientId,
+      actor.id,
+      'FIRST_CONTACT_DONE',
+      'Primeiro contato confirmado',
+      `${actor.name} declarou ter realizado a apresentação inicial no WhatsApp do cliente.`
+    );
 
+    this.logAudit(db, actor.id, 'FIRST_CONTACT', `Primeiro contato confirmado para ${client.name}`);
+    this.saveState(db);
+    return client;
+  }
+
+  // Reatribuição de cliente pelo Pablo
+  reassignClient(actor, clientId, newSellerId) {
+    if (!actor || actor.role !== 'admin' || !actor.active) {
+      throw new Error('Apenas o Pablo pode reatribuir clientes.');
+    }
+    const db = this.getState();
+    const client = db.clients.find((c) => c.id === clientId);
+    if (!client) throw new Error('Cliente não encontrado.');
+    const newSeller = db.users.find((u) => u.id === newSellerId && u.role === 'seller' && u.active && !u.deleted);
+    if (!newSeller) throw new Error('Vendedor de destino inválido ou inativo.');
+    if (client.assignedSellerId === newSeller.id) {
+      throw new Error('O cliente já está atribuído a este vendedor.');
+    }
+
+    const oldSeller = db.users.find((u) => u.id === client.assignedSellerId);
     client.assignedSellerId = newSeller.id;
-    client.assignedSellerName = newSeller.name;
-    client.updatedAt = now;
 
-    const pendingTask = db.tasks.find((t) => t.clientId === clientId && t.status === 'pending');
-    if (pendingTask) {
-      pendingTask.assignedSellerId = newSeller.id;
-    }
-
-    const meeting = db.meetings.find((m) => m.id === client.activeMeetingId);
-    if (meeting) {
-      meeting.assignedSellerId = newSeller.id;
-      meeting.assignedSellerName = newSeller.name;
-      meeting.updatedAt = now;
-    }
-
-    client.history.unshift({
-      id: generateUUID(),
-      type: 'REASSIGNED',
-      title: 'Cliente reatribuído',
-      description: `Transferido de ${previousSellerName} para ${newSeller.name} por ${actorUser.name} em ${formatSaoPauloDateTime(now)}.`,
-      actorName: actorUser.name,
-      actorRole: 'admin',
-      timestamp: now,
+    db.tasks.forEach((t) => {
+      if (t.clientId === clientId && t.status === 'pending') t.sellerId = newSeller.id;
     });
+    db.meetings.forEach((m) => {
+      if (m.clientId === clientId && m.status === 'scheduled') m.sellerId = newSeller.id;
+    });
+
+    this.pushTimeline(
+      db,
+      clientId,
+      actor.id,
+      'REASSIGNED',
+      'Cliente reatribuído',
+      `Transferido por ${actor.name} de ${oldSeller?.name || 'vendedor anterior'} para ${newSeller.name}.`
+    );
 
     this.pushNotification(
       db,
       newSeller.id,
-      'Cliente transferido para você',
-      `${client.name} (${client.segment}) foi transferido para sua carteira por ${actorUser.name}.`,
-      'assignment',
-      clientId
+      'Cliente transferido para sua carteira',
+      `${actor.name} transferiu o cliente ${client.name} (${client.segment}) para você.`,
+      { clientId }
     );
 
-    this.appendAudit(
-      db,
-      actorUser.email,
-      'CLIENT_REASSIGNED',
-      `Cliente "${client.name}" transferido de ${previousSellerName} para ${newSeller.name}.`,
-      { clientId, newSellerId: newSeller.id }
-    );
-
-    this.saveDb(db);
-    return { ok: true, client };
+    this.logAudit(db, actor.id, 'CLIENT_REASSIGNED', `${client.name} transferido para ${newSeller.name}`);
+    this.saveState(db);
+    return client;
   }
 
-  /**
-   * REUNIÃO ÚNICA — REGISTRO DOS DADOS (QUALIFICAÇÃO + SOLUÇÃO/PROPOSTA + AUTOAVALIAÇÃO)
-   */
-  submitSalesMeetingReport(actorUser, clientId, payload) {
-    if (!actorUser) return { ok: false, message: 'Sessão inválida.' };
+  // Reagendamento da Reunião Única preservando o agendamento anterior
+  rescheduleMeeting(actor, clientId, { newDate, newTime, reason, notes }) {
+    if (!actor || !actor.active) throw new Error('Usuário não autenticado.');
+    if (!newDate || !newTime) throw new Error('Informe a nova data e o novo horário.');
 
-    const db = this.getDb();
+    const db = this.getState();
     const client = db.clients.find((c) => c.id === clientId);
-    if (!client) return { ok: false, message: 'Cliente não encontrado.' };
-
-    if (actorUser.role === 'seller' && client.assignedSellerId !== actorUser.id) {
-      return { ok: false, message: 'Permissão negada para registrar reunião de outro vendedor.' };
+    if (!client) throw new Error('Cliente não encontrado.');
+    if (actor.role === 'seller' && client.assignedSellerId !== actor.id) {
+      throw new Error('Sem permissão para reagendar este cliente.');
     }
 
-    const meeting = db.meetings.find((m) => m.id === client.activeMeetingId);
-    if (!meeting) return { ok: false, message: 'Agendamento de reunião não localizado.' };
+    const meeting = db.meetings.find((m) => m.id === client.currentMeetingId);
+    if (!meeting) throw new Error('Agendamento vigente não encontrado.');
 
-    if (meeting.status === 'completed' && meeting.reportId) {
-      return {
-        ok: false,
-        message: 'Esta Reunião de Vendas já possui um relatório concluído e registrado.',
-      };
-    }
-
-    const validSaleStatuses = ['completed', 'pending_payment', 'cancelled', 'refunded'];
-    if (!validSaleStatuses.includes(payload.saleStatus)) {
-      return { ok: false, message: 'Selecione o Status financeiro no Registro da Venda.' };
-    }
-    if (!['immediate', '50_50'].includes(payload.paymentStructure)) {
-      return { ok: false, message: 'Selecione se o pagamento é Pagamento imediato ou 50/50.' };
-    }
-
-    const saleValueNum = parseFloat(String(payload.saleValue || '0').replace(',', '.'));
-    if (isNaN(saleValueNum) || saleValueNum <= 0) {
-      return { ok: false, message: 'Informe um Valor vendido válido maior que zero.' };
-    }
-
-    const sentValueNum = parseFloat(String(payload.sentValue || '0').replace(',', '.'));
-    if (isNaN(sentValueNum) || sentValueNum < 0 || sentValueNum > saleValueNum) {
-      return { ok: false, message: 'O Valor enviado deve estar entre R$ 0,00 e o Valor vendido.' };
-    }
-
-    if (!(payload.paymentMethod || '').trim()) {
-      return { ok: false, message: 'Informe o Método de pagamento no Registro da Venda.' };
-    }
-
-    if (!['Wix', 'Vercel'].includes(payload.domainProvider)) {
-      return { ok: false, message: 'Selecione a alternativa de domínio: Wix ou Vercel.' };
-    }
-
-    if (!(payload.nextSiteCallDate || '').trim()) {
-      return { ok: false, message: 'Informe a data para a próxima call apresentando o site.' };
-    }
-
-    const existingSale = db.sales.find((s) => s.clientId === client.id && s.status !== 'cancelled');
-    if (existingSale) {
-      return {
-        ok: false,
-        message: 'Já existe uma venda válida registrada para este cliente. Duplicação bloqueada.',
-      };
-    }
-
-    const orNotInformed = (val) => {
-      const clean = (val || '').trim();
-      return clean.length > 0 ? clean : 'Não informado';
-    };
-
-    const now = new Date().toISOString();
-    const reportId = generateUUID();
-    const isSaleWon = payload.saleStatus === 'completed' || payload.saleStatus === 'pending_payment';
-
-    const reportRecord = {
-      id: reportId,
-      recordType: 'MEETING_REPORT',
-      clientId: client.id,
-      clientName: client.name,
-      clientSegment: client.segment,
-      meetingId: meeting.id,
-      sellerId: client.assignedSellerId,
-      sellerName: this.resolveUserLabel(db, client.assignedSellerId, client.assignedSellerName),
-      submittedById: actorUser.id,
-      submittedByName: actorUser.name,
-      isReadByAdmin: actorUser.role === 'admin',
-      readByAdminAt: actorUser.role === 'admin' ? now : null,
-      readByAdminName: actorUser.role === 'admin' ? actorUser.name : null,
-      createdAt: now,
-
-      // Reunião de vendas: Infos
-      sectionA: {
-        scheduledDate: meeting.scheduledDate,
-        scheduledTime: meeting.scheduledTime,
-        status: 'Realizada',
-        previousReschedulesCount: meeting.rescheduleCount || 0,
-        previousSchedules: meeting.previousSchedules || [],
-      },
-
-      // Registro da Venda
-      saleInfo: {
-        service: 'Site',
-        saleStatus: payload.saleStatus,
-        paymentStructure: payload.paymentStructure,
-        saleValue: saleValueNum,
-        sentValue: sentValueNum,
-        paymentMethod: payload.paymentMethod.trim(),
-      },
-
-      // Registro dos Dados — Negócio & Oferta + Dificuldades / Necessidades
-      sectionB: {
-        businessAndOffer: orNotInformed(payload.businessAndOffer),
-        difficultiesAndNeeds: orNotInformed(payload.difficultiesAndNeeds),
-      },
-
-      // Solução & Proposta
-      sectionC: {
-        howSiteHelpsClient: orNotInformed(payload.howSiteHelpsClient),
-        domainProvider: payload.domainProvider,
-        nextSiteCallDate: payload.nextSiteCallDate.trim(),
-      },
-
-      // Autoavaliação e Depoimento Geral
-      sectionF: {
-        selfEvaluation: orNotInformed(payload.selfEvaluation),
-        generalTestimonial: orNotInformed(payload.generalTestimonial),
-      },
-    };
-
-    meeting.status = 'completed';
-    meeting.completedAt = now;
-    meeting.reportId = reportId;
-    meeting.updatedAt = now;
-
-    client.meetingStatus = 'completed';
-    client.updatedAt = now;
-
-    let createdSale = null;
-    if (isSaleWon) {
-      createdSale = {
-        id: generateUUID(),
-        clientId: client.id,
-        clientName: client.name,
-        clientSegment: client.segment,
-        meetingId: meeting.id,
-        reportId,
-        sellerId: client.assignedSellerId,
-        sellerName: this.resolveUserLabel(db, client.assignedSellerId, client.assignedSellerName),
-        saleDate: getTodaySaoPauloISO(),
-        value: saleValueNum,
-        receivedValue: sentValueNum,
-        productOrService: 'Site',
-        paymentStructure: payload.paymentStructure,
-        paymentMethod: payload.paymentMethod.trim(),
-        status: payload.saleStatus,
-        notes: `Domínio: ${payload.domainProvider} | Próx. call: ${formatMeetingSchedule(payload.nextSiteCallDate, '')}`,
-        createdAt: now,
-        updatedAt: now,
-      };
-      db.sales.unshift(createdSale);
-      client.hasSale = true;
-    }
-
-    db.meetingReports.unshift(reportRecord);
-
-    client.history.unshift({
-      id: generateUUID(),
-      type: 'REPORT_SUBMITTED',
-      title: 'Registro dos Dados & Venda enviados',
-      description: `Reunião realizada por ${actorUser.name} | Valor vendido: ${formatCurrencyBRL(saleValueNum)} | Enviado: ${formatCurrencyBRL(sentValueNum)} | Domínio: ${payload.domainProvider}.`,
-      actorName: actorUser.name,
-      actorRole: actorUser.role,
-      timestamp: now,
-    });
-
-    if (createdSale) {
-      client.history.unshift({
-        id: generateUUID(),
-        type: 'SALE_RECORDED',
-        title: 'Venda registrada no PontoWeb CRM',
-        description: `Site — Vendido: ${formatCurrencyBRL(createdSale.value)} | Recebido: ${formatCurrencyBRL(createdSale.receivedValue)} (${payload.paymentStructure === '50_50' ? '50/50' : 'Imediato'}) via ${createdSale.paymentMethod}.`,
-        actorName: actorUser.name,
-        actorRole: actorUser.role,
-        timestamp: now,
-      });
-    }
-
-    const admins = db.users.filter((u) => u.role === 'admin' && u.status === 'active');
-    admins.forEach((admin) => {
-      if (admin.id !== actorUser.id) {
-        this.pushNotification(
-          db,
-          admin.id,
-          'Novo Registro dos Dados recebido',
-          `${actorUser.name} enviou o registro de ${client.name} — Vendido: ${formatCurrencyBRL(saleValueNum)} (Domínio: ${payload.domainProvider}).`,
-          'report',
-          reportId
-        );
-      }
-    });
-
-    this.appendAudit(
-      db,
-      actorUser.email,
-      'MEETING_REPORT_SUBMITTED',
-      `Registro dos Dados enviado para "${client.name}" (Reunião ${meeting.id}).`,
-      { clientId: client.id, reportId, saleId: createdSale?.id || null }
-    );
-
-    this.saveDb(db);
-    return { ok: true, report: reportRecord, sale: createdSale };
-  }
-
-  /**
-   * VÁCUO (NÃO COMPARECIMENTO / NÃO RESPOSTA / CANCELAMENTO)
-   */
-  registerNoShowOccurrence(actorUser, clientId, payload) {
-    if (!actorUser) return { ok: false, message: 'Sessão inválida.' };
-
-    const validReasons = [
-      'Cliente não respondeu',
-      'Cliente não compareceu',
-      'Cliente cancelou sem reagendar',
-      'Outro motivo',
-    ];
-    if (!validReasons.includes(payload.reason)) {
-      return { ok: false, message: 'Selecione um motivo válido para a ocorrência.' };
-    }
-    const description = (payload.description || '').trim();
-    if (description.length < 5) {
-      return { ok: false, message: 'Descreva o ocorrido (mínimo 5 caracteres).' };
-    }
-
-    const db = this.getDb();
-    const client = db.clients.find((c) => c.id === clientId);
-    if (!client) return { ok: false, message: 'Cliente não encontrado.' };
-
-    if (actorUser.role === 'seller' && client.assignedSellerId !== actorUser.id) {
-      return { ok: false, message: 'Permissão negada para alterar cliente de outro vendedor.' };
-    }
-
-    const meeting = db.meetings.find((m) => m.id === client.activeMeetingId);
-    if (!meeting) return { ok: false, message: 'Reunião vigente não encontrada.' };
-
-    if (meeting.status === 'completed') {
-      return { ok: false, message: 'Esta reunião já foi concluída com relatório.' };
-    }
-
-    const now = new Date().toISOString();
-    const occurrenceId = generateUUID();
-
-    const occurrence = {
-      id: occurrenceId,
-      recordType: 'NO_SHOW',
-      clientId: client.id,
-      clientName: client.name,
-      clientSegment: client.segment,
-      meetingId: meeting.id,
-      sellerId: client.assignedSellerId,
-      sellerName: this.resolveUserLabel(db, client.assignedSellerId, client.assignedSellerName),
-      registeredById: actorUser.id,
-      registeredByName: actorUser.name,
-      scheduledDate: meeting.scheduledDate,
-      scheduledTime: meeting.scheduledTime,
-      reason: payload.reason,
-      description,
-      contactAttempts: Number(payload.contactAttempts) || 1,
-      evidenceNote: (payload.evidenceNote || '').trim() || 'Não informado',
-      isReadByAdmin: actorUser.role === 'admin',
-      readByAdminAt: actorUser.role === 'admin' ? now : null,
-      readByAdminName: actorUser.role === 'admin' ? actorUser.name : null,
-      createdAt: now,
-    };
-
-    meeting.status = 'no_show';
-    meeting.updatedAt = now;
-    client.meetingStatus = 'no_show';
-    client.updatedAt = now;
-
-    db.noShowOccurrences.unshift(occurrence);
-
-    client.history.unshift({
-      id: generateUUID(),
-      type: 'NO_SHOW',
-      title: `Ocorrência de Vácuo (${payload.reason})`,
-      description: `${description} | Tentativas: ${occurrence.contactAttempts} | Evidência: ${occurrence.evidenceNote}.`,
-      actorName: actorUser.name,
-      actorRole: actorUser.role,
-      timestamp: now,
-    });
-
-    const admins = db.users.filter((u) => u.role === 'admin' && u.status === 'active');
-    admins.forEach((admin) => {
-      if (admin.id !== actorUser.id) {
-        this.pushNotification(
-          db,
-          admin.id,
-          'Ocorrência de Vácuo registrada',
-          `${actorUser.name} registrou vácuo para ${client.name}: ${payload.reason}.`,
-          'warning',
-          occurrenceId
-        );
-      }
-    });
-
-    this.appendAudit(
-      db,
-      actorUser.email,
-      'MEETING_NO_SHOW',
-      `Vácuo registrado para "${client.name}" — Motivo: ${payload.reason}.`,
-      { clientId: client.id, occurrenceId }
-    );
-
-    this.saveDb(db);
-    return { ok: true, occurrence };
-  }
-
-  /**
-   * REAGENDAMENTO (PRESERVA AGENDAMENTO ORIGINAL)
-   */
-  rescheduleSalesMeeting(actorUser, clientId, payload) {
-    if (!actorUser) return { ok: false, message: 'Sessão inválida.' };
-
-    const newDate = (payload.newDate || '').trim();
-    const newTime = (payload.newTime || '').trim();
-    const reason = (payload.reason || '').trim() || 'Não informado';
-    const notes = (payload.notes || '').trim() || 'Não informado';
-
-    if (!newDate || !newTime) {
-      return { ok: false, message: 'Informe a nova data e o novo horário para reagendar.' };
-    }
-
-    const db = this.getDb();
-    const client = db.clients.find((c) => c.id === clientId);
-    if (!client) return { ok: false, message: 'Cliente não encontrado.' };
-
-    if (actorUser.role === 'seller' && client.assignedSellerId !== actorUser.id) {
-      return { ok: false, message: 'Permissão negada para reagendar cliente de outro vendedor.' };
-    }
-
-    const meeting = db.meetings.find((m) => m.id === client.activeMeetingId);
-    if (!meeting) return { ok: false, message: 'Agendamento vigente não localizado.' };
-
-    if (meeting.status === 'completed') {
-      return { ok: false, message: 'Não é possível reagendar uma reunião já realizada com relatório.' };
-    }
-
-    const conflict = db.meetings.find(
-      (m) =>
-        m.id !== meeting.id &&
-        m.assignedSellerId === client.assignedSellerId &&
-        m.scheduledDate === newDate &&
-        m.scheduledTime === newTime &&
-        m.status === 'scheduled'
-    );
-    if (conflict) {
-      return { ok: false, message: 'Conflito de horário: já existe outra reunião agendada nesse momento.' };
-    }
-
-    const now = new Date().toISOString();
-    const rescheduleId = generateUUID();
     const prevDate = meeting.scheduledDate;
     const prevTime = meeting.scheduledTime;
 
-    const rescheduleRecord = {
-      id: rescheduleId,
-      recordType: 'RESCHEDULE',
-      clientId: client.id,
-      clientName: client.name,
-      clientSegment: client.segment,
+    const record = {
+      id: generateId('rsc'),
+      clientId,
       meetingId: meeting.id,
       sellerId: client.assignedSellerId,
-      sellerName: this.resolveUserLabel(db, client.assignedSellerId, client.assignedSellerName),
-      changedById: actorUser.id,
-      changedByName: actorUser.name,
+      actorId: actor.id,
       previousDate: prevDate,
       previousTime: prevTime,
       newDate,
       newTime,
-      reason,
-      notes,
-      isReadByAdmin: actorUser.role === 'admin',
-      readByAdminAt: actorUser.role === 'admin' ? now : null,
-      readByAdminName: actorUser.role === 'admin' ? actorUser.name : null,
-      createdAt: now,
+      reason: (reason || 'Não informado').trim(),
+      notes: (notes || '').trim(),
+      readByAdmin: actor.role === 'admin',
+      createdAt: nowIso(),
     };
 
-    meeting.previousSchedules = [
-      ...(meeting.previousSchedules || []),
-      {
-        date: prevDate,
-        time: prevTime,
-        changedAt: now,
-        changedBy: actorUser.name,
-        reason,
-      },
-    ];
     meeting.scheduledDate = newDate;
     meeting.scheduledTime = newTime;
     meeting.status = 'scheduled';
     meeting.rescheduleCount = (meeting.rescheduleCount || 0) + 1;
-    meeting.updatedAt = now;
 
-    client.meetingDate = newDate;
-    client.meetingTime = newTime;
-    client.meetingStatus = 'scheduled';
-    client.updatedAt = now;
+    db.rescheduleRecords.unshift(record);
 
-    db.rescheduleRecords.unshift(rescheduleRecord);
-
-    client.history.unshift({
-      id: generateUUID(),
-      type: 'RESCHEDULED',
-      title: 'Reunião de Vendas reagendada',
-      description: `Alterada de ${formatMeetingSchedule(prevDate, prevTime, true)} para ${formatMeetingSchedule(newDate, newTime, true)}. Motivo: ${reason}.`,
-      actorName: actorUser.name,
-      actorRole: actorUser.role,
-      timestamp: now,
-    });
-
-    const admins = db.users.filter((u) => u.role === 'admin' && u.status === 'active');
-    admins.forEach((admin) => {
-      if (admin.id !== actorUser.id) {
-        this.pushNotification(
-          db,
-          admin.id,
-          'Reunião reagendada',
-          `${actorUser.name} reagendou ${client.name} para ${formatMeetingSchedule(newDate, newTime, true)}.`,
-          'info',
-          rescheduleId
-        );
-      }
-    });
-
-    this.appendAudit(
+    this.pushTimeline(
       db,
-      actorUser.email,
-      'MEETING_RESCHEDULED',
-      `Reunião de "${client.name}" reagendada de ${prevDate} ${prevTime} para ${newDate} ${newTime}.`,
-      { clientId: client.id, rescheduleId }
+      clientId,
+      actor.id,
+      'RESCHEDULED',
+      'Reunião de vendas reagendada',
+      `De ${formatDateWithWeekdayBR(prevDate, prevTime)} para ${formatDateWithWeekdayBR(newDate, newTime)}. Motivo: ${record.reason}.`
     );
 
-    this.saveDb(db);
-    return { ok: true, rescheduleRecord, meeting };
+    if (actor.role !== 'admin') {
+      db.users
+        .filter((u) => u.role === 'admin' && u.active && !u.deleted)
+        .forEach((p) => {
+          this.pushNotification(
+            db,
+            p.id,
+            'Reunião reagendada',
+            `${actor.name} reagendou a call com ${client.name} para ${formatDateWithWeekdayBR(newDate, newTime)}.`,
+            { clientId, recordId: record.id }
+          );
+        });
+    }
+
+    this.logAudit(db, actor.id, 'MEETING_RESCHEDULED', `Reunião de ${client.name} reagendada`);
+    this.saveState(db);
+    return record;
   }
 
-  /**
-   * ATUALIZAÇÃO FINANCEIRA DE VENDA (VALOR VENDIDO vs VALOR RECEBIDO)
-   */
-  updateSaleFinancials(actorUser, saleId, payload) {
-    if (!actorUser) return { ok: false, message: 'Sessão inválida.' };
+  // Registro de Vácuo (não contabiliza como reunião realizada)
+  registerNoShow(actor, clientId, { reason, description, contactAttempts }) {
+    if (!actor || !actor.active) throw new Error('Usuário não autenticado.');
+    if (!reason || !description?.trim()) {
+      throw new Error('Selecione o motivo e descreva o ocorrido.');
+    }
 
-    const db = this.getDb();
+    const db = this.getState();
+    const client = db.clients.find((c) => c.id === clientId);
+    if (!client) throw new Error('Cliente não encontrado.');
+    if (actor.role === 'seller' && client.assignedSellerId !== actor.id) {
+      throw new Error('Sem permissão para registrar ocorrência neste cliente.');
+    }
+
+    const meeting = db.meetings.find((m) => m.id === client.currentMeetingId);
+    const ts = nowIso();
+
+    const occurrence = {
+      id: generateId('vac'),
+      clientId,
+      meetingId: meeting?.id || null,
+      sellerId: client.assignedSellerId,
+      actorId: actor.id,
+      reason,
+      description: description.trim(),
+      contactAttempts: Number(contactAttempts) || 1,
+      readByAdmin: actor.role === 'admin',
+      createdAt: ts,
+    };
+
+    if (meeting) {
+      meeting.status = 'no_show';
+    }
+
+    db.noShowOccurrences.unshift(occurrence);
+
+    this.pushTimeline(
+      db,
+      clientId,
+      actor.id,
+      'NO_SHOW',
+      `Ocorrência de vácuo: ${reason}`,
+      occurrence.description
+    );
+
+    if (actor.role !== 'admin') {
+      db.users
+        .filter((u) => u.role === 'admin' && u.active && !u.deleted)
+        .forEach((p) => {
+          this.pushNotification(
+            db,
+            p.id,
+            'Ocorrência de Vácuo registrada',
+            `${actor.name} registrou vácuo (${reason}) para ${client.name}.`,
+            { clientId, occurrenceId: occurrence.id }
+          );
+        });
+    }
+
+    this.logAudit(db, actor.id, 'MEETING_NO_SHOW', `Vácuo registrado para ${client.name}: ${reason}`);
+    this.saveState(db);
+    return occurrence;
+  }
+
+  // Envio do Relatório Único (Registro dos Dados + Registro da Venda opcional)
+  submitUnifiedMeetingReport(actor, clientId, form) {
+    if (!actor || !actor.active) throw new Error('Usuário não autenticado.');
+    const db = this.getState();
+    const client = db.clients.find((c) => c.id === clientId);
+    if (!client) throw new Error('Cliente não encontrado.');
+    if (actor.role === 'seller' && client.assignedSellerId !== actor.id) {
+      throw new Error('Você não tem permissão para registrar este atendimento.');
+    }
+
+    const meeting = db.meetings.find((m) => m.id === client.currentMeetingId);
+    if (!meeting) throw new Error('Agendamento da reunião não encontrado.');
+
+    const existingReport = db.meetingReports.find((r) => r.meetingId === meeting.id);
+    if (existingReport) {
+      throw new Error('O relatório desta reunião já foi enviado anteriormente.');
+    }
+
+    if (!form.saleClosedChoice) {
+      throw new Error('Informe se houve venda concluída neste atendimento.');
+    }
+
+    const isSaleClosed = form.saleClosedChoice === 'Venda concluída';
+    if (isSaleClosed) {
+      if (!form.saleValue || Number(form.saleValue) <= 0) {
+        throw new Error('Informe um Valor Vendido válido maior que zero.');
+      }
+      if (!form.paymentStructure) {
+        throw new Error('Selecione se o pagamento é imediato ou 50/50.');
+      }
+      if (!form.paymentMethod?.trim()) {
+        throw new Error('Informe o método de pagamento.');
+      }
+    }
+
+    const fillOrDefault = (val) => (val && String(val).trim() ? String(val).trim() : 'Não informado');
+    const ts = nowIso();
+    const reportId = generateId('rep');
+    const prevReschedules = db.rescheduleRecords.filter((r) => r.clientId === clientId);
+
+    let createdSaleId = null;
+
+    if (isSaleClosed) {
+      const existingSale = db.sales.find((s) => s.clientId === clientId && s.meetingId === meeting.id);
+      if (!existingSale) {
+        createdSaleId = generateId('sal');
+        const soldVal = Number(form.saleValue);
+        const sentVal = Number(form.amountSent) || 0;
+        if (sentVal < 0 || sentVal > soldVal) {
+          throw new Error('O valor enviado não pode ser negativo nem superior ao valor vendido.');
+        }
+
+        const sale = {
+          id: createdSaleId,
+          clientId,
+          sellerId: client.assignedSellerId,
+          meetingId: meeting.id,
+          reportId,
+          saleDate: ts,
+          amountSold: soldVal,
+          amountReceived: sentVal,
+          paymentStructure: form.paymentStructure, // 'Pagamento imediato' | '50/50'
+          paymentMethod: form.paymentMethod.trim(),
+          financialStatus: form.financialStatus || 'Pagamento pendente',
+          // Status de validação do Pablo: pending_pablo | confirmed_sdr | confirmed_vercel | not_sold
+          pabloValidationStatus: 'pending_pablo',
+          pabloValidatedAt: null,
+          pabloValidatedById: null,
+          notes: fillOrDefault(form.saleNotes),
+          createdAt: ts,
+        };
+        db.sales.unshift(sale);
+      }
+    }
+
+    const report = {
+      id: reportId,
+      clientId,
+      sellerId: client.assignedSellerId,
+      meetingId: meeting.id,
+      saleId: createdSaleId,
+      scheduledDate: meeting.scheduledDate,
+      scheduledTime: meeting.scheduledTime,
+      effectiveDateTime: form.effectiveDateTime || ts,
+      durationMinutes: fillOrDefault(form.durationMinutes),
+      previousReschedulesCount: prevReschedules.length,
+      // Negócio & Oferta + Dificuldades / Necessidades
+      businessDescription: fillOrDefault(form.businessDescription),
+      productsOrServices: fillOrDefault(form.productsOrServices),
+      targetAudienceAndRegion: fillOrDefault(form.targetAudienceAndRegion),
+      currentDigitalPresence: fillOrDefault(form.currentDigitalPresence),
+      mainDifficulties: fillOrDefault(form.mainDifficulties),
+      clientNeedsAndGoals: fillOrDefault(form.clientNeedsAndGoals),
+      // Solução & Proposta
+      howSiteHelpsClient: fillOrDefault(form.howSiteHelpsClient),
+      domainPlatform: form.domainPlatform || 'Não informado', // 'Wix' | 'Vercel'
+      nextCallSitePresentationDate: fillOrDefault(form.nextCallSitePresentationDate),
+      proposedValue: fillOrDefault(form.proposedValue),
+      // Autoavaliação e Depoimento livre
+      selfEvaluation: fillOrDefault(form.selfEvaluation),
+      sellerTestimony: fillOrDefault(form.sellerTestimony),
+      saleClosedChoice: form.saleClosedChoice,
+      readByAdmin: actor.role === 'admin',
+      createdAt: ts,
+    };
+
+    meeting.status = 'completed';
+    meeting.completedAt = ts;
+    db.meetingReports.unshift(report);
+
+    this.pushTimeline(
+      db,
+      clientId,
+      actor.id,
+      'REPORT_SUBMITTED',
+      'Relatório da Reunião de Vendas enviado',
+      `Reunião concluída por ${actor.name}. Situação comercial: ${form.saleClosedChoice}.`
+    );
+
+    if (actor.role !== 'admin') {
+      db.users
+        .filter((u) => u.role === 'admin' && u.active && !u.deleted)
+        .forEach((p) => {
+          this.pushNotification(
+            db,
+            p.id,
+            isSaleClosed ? 'Novo relatório com Venda para confirmar!' : 'Novo relatório de reunião recebido',
+            `${actor.name} enviou o relatório do cliente ${client.name} (${form.saleClosedChoice}).`,
+            { clientId, reportId, saleId: createdSaleId }
+          );
+        });
+    }
+
+    this.logAudit(db, actor.id, 'REPORT_SUBMITTED', `Relatório único enviado para ${client.name}`);
+    this.saveState(db);
+    return report;
+  }
+
+  // Decisão exclusiva do Pablo sobre a venda relatada:
+  // 'confirmed_sdr' | 'confirmed_vercel' | 'not_sold'
+  validateReportedSaleByPablo(actor, saleId, decision) {
+    if (!actor || actor.role !== 'admin' || !actor.active) {
+      throw new Error('Apenas o Pablo pode validar vendas relatadas.');
+    }
+    const db = this.getState();
     const sale = db.sales.find((s) => s.id === saleId);
-    if (!sale) return { ok: false, message: 'Venda não encontrada.' };
-
-    if (actorUser.role === 'seller' && sale.sellerId !== actorUser.id) {
-      return { ok: false, message: 'Permissão negada para alterar venda de outro vendedor.' };
-    }
-
-    const validStatuses = ['completed', 'pending_payment', 'cancelled', 'refunded'];
-    if (!validStatuses.includes(payload.status)) {
-      return { ok: false, message: 'Status financeiro inválido.' };
-    }
-
-    const receivedNum = parseFloat(String(payload.receivedValue ?? '0').replace(',', '.'));
-    if (isNaN(receivedNum) || receivedNum < 0 || receivedNum > sale.value) {
-      return {
-        ok: false,
-        message: `O valor recebido deve estar entre R$ 0,00 e ${formatCurrencyBRL(sale.value)}.`,
-      };
-    }
-
-    const now = new Date().toISOString();
-    const prevStatus = sale.status;
-    const prevReceived = sale.receivedValue || 0;
-
-    sale.status = payload.status;
-    sale.receivedValue = payload.status === 'refunded' ? 0 : receivedNum;
-    if (payload.paymentMethod !== undefined && payload.paymentMethod.trim()) {
-      sale.paymentMethod = payload.paymentMethod.trim();
-    }
-    if (payload.notes !== undefined) {
-      sale.notes = payload.notes.trim();
-    }
-    sale.updatedAt = now;
+    if (!sale) throw new Error('Registro de venda não encontrado.');
 
     const client = db.clients.find((c) => c.id === sale.clientId);
-    if (client) {
-      const hasValidSale = db.sales.some(
-        (s) => s.clientId === client.id && s.status !== 'cancelled' && s.status !== 'refunded'
+    const ts = nowIso();
+    sale.pabloValidationStatus = decision;
+    sale.pabloValidatedAt = ts;
+    sale.pabloValidatedById = actor.id;
+
+    if (decision === 'confirmed_sdr') {
+      if (sale.financialStatus === 'Cancelada') {
+        sale.financialStatus = 'Concluída';
+      }
+      this.pushTimeline(
+        db,
+        sale.clientId,
+        actor.id,
+        'SALE_CONFIRMED_SDR',
+        'Venda confirmada pelo Pablo (Wix / SDR)',
+        `Venda de ${formatCurrencyBRL(sale.amountSold)} confirmada para ${client?.name || 'cliente'} com repasse de visibilidade ao SDR (US$ 50 Wix).`
       );
-      client.hasSale = hasValidSale;
-      client.updatedAt = now;
-      client.history.unshift({
-        id: generateUUID(),
-        type: 'SALE_RECORDED',
-        title: 'Atualização financeira da venda',
-        description: `Status: ${sale.status.toUpperCase()} | Recebido: ${formatCurrencyBRL(sale.receivedValue)} de ${formatCurrencyBRL(sale.value)} (por ${actorUser.name}).`,
-        actorName: actorUser.name,
-        actorRole: actorUser.role,
-        timestamp: now,
-      });
+      // Notifica SDRs ativos
+      db.users
+        .filter((u) => u.role === 'sdr' && u.active && !u.deleted)
+        .forEach((sdr) => {
+          this.pushNotification(
+            db,
+            sdr.id,
+            'Nova venda confirmada!',
+            `Uma venda foi concluída para o cliente ${client?.name || 'cadastrado'} (Comissão Wix: US$ 50,00).`,
+            { saleId: sale.id }
+          );
+        });
+      // Notifica vendedor
+      this.pushNotification(
+        db,
+        sale.sellerId,
+        'Venda confirmada pelo Pablo',
+        `Sua venda para ${client?.name || 'cliente'} (${formatCurrencyBRL(sale.amountSold)}) foi confirmada.`,
+        { saleId: sale.id }
+      );
+    } else if (decision === 'confirmed_vercel') {
+      if (sale.financialStatus === 'Cancelada') {
+        sale.financialStatus = 'Concluída';
+      }
+      this.pushTimeline(
+        db,
+        sale.clientId,
+        actor.id,
+        'SALE_CONFIRMED_VERCEL',
+        'Venda confirmada pelo Pablo (Vercel)',
+        `Venda de ${formatCurrencyBRL(sale.amountSold)} confirmada via Vercel para ${client?.name || 'cliente'} (restrita ao Pablo e vendedor).`
+      );
+      this.pushNotification(
+        db,
+        sale.sellerId,
+        'Venda Vercel confirmada pelo Pablo',
+        `Sua venda via Vercel para ${client?.name || 'cliente'} (${formatCurrencyBRL(sale.amountSold)}) foi confirmada.`,
+        { saleId: sale.id }
+      );
+    } else if (decision === 'not_sold') {
+      sale.financialStatus = 'Cancelada';
+      this.pushTimeline(
+        db,
+        sale.clientId,
+        actor.id,
+        'SALE_NOT_SOLD',
+        'Marcado como Não Vendido pelo Pablo',
+        `O Pablo registrou que a negociação com ${client?.name || 'cliente'} não foi concluída como venda.`
+      );
+      this.pushNotification(
+        db,
+        sale.sellerId,
+        'Atualização de venda pelo Pablo',
+        `O fechamento de ${client?.name || 'cliente'} foi registrado como Não Vendido pelo Pablo.`,
+        { saleId: sale.id }
+      );
     }
 
-    this.appendAudit(
+    this.logAudit(db, actor.id, 'PABLO_SALE_VALIDATION', `Venda ${sale.id} marcada como ${decision}`);
+    this.saveState(db);
+    return sale;
+  }
+
+  updateSaleFinancials(actor, saleId, { financialStatus, amountReceived, notes }) {
+    if (!actor || !actor.active) throw new Error('Usuário não autenticado.');
+    const db = this.getState();
+    const sale = db.sales.find((s) => s.id === saleId);
+    if (!sale) throw new Error('Venda não encontrada.');
+    if (actor.role === 'seller' && sale.sellerId !== actor.id) {
+      throw new Error('Você só pode editar suas próprias vendas.');
+    }
+
+    const received = Number(amountReceived);
+    if (isNaN(received) || received < 0 || received > sale.amountSold) {
+      throw new Error(`O valor recebido deve estar entre R$ 0,00 e ${formatCurrencyBRL(sale.amountSold)}.`);
+    }
+
+    sale.financialStatus = financialStatus;
+    sale.amountReceived = received;
+    if (notes !== undefined) sale.notes = notes;
+
+    this.pushTimeline(
       db,
-      actorUser.email,
-      'SALE_FINANCIAL_UPDATED',
-      `Venda ${sale.id} (${sale.clientName}): status ${prevStatus} -> ${sale.status}, recebido ${formatCurrencyBRL(prevReceived)} -> ${formatCurrencyBRL(sale.receivedValue)}.`,
-      { saleId: sale.id, clientId: sale.clientId }
+      sale.clientId,
+      actor.id,
+      'SALE_UPDATED',
+      'Status financeiro da venda atualizado',
+      `Status: ${financialStatus}. Valor recebido: ${formatCurrencyBRL(received)} de ${formatCurrencyBRL(sale.amountSold)}.`
     );
 
-    this.saveDb(db);
-    return { ok: true, sale };
+    this.logAudit(db, actor.id, 'SALE_UPDATED', `Venda ${sale.id} atualizada (${financialStatus})`);
+    this.saveState(db);
+    return sale;
   }
 
-  markReportRecordAsRead(actorUser, recordType, recordId) {
-    if (!actorUser || actorUser.role !== 'admin') return { ok: false };
-    const db = this.getDb();
-    let target = null;
-    if (recordType === 'MEETING_REPORT') {
-      target = db.meetingReports.find((r) => r.id === recordId);
-    } else if (recordType === 'NO_SHOW') {
-      target = db.noShowOccurrences.find((r) => r.id === recordId);
-    } else if (recordType === 'RESCHEDULE') {
-      target = db.rescheduleRecords.find((r) => r.id === recordId);
+  markReportItemRead(actor, kind, itemId) {
+    if (!actor || actor.role !== 'admin') return;
+    const db = this.getState();
+    const list =
+      kind === 'report'
+        ? db.meetingReports
+        : kind === 'no_show'
+        ? db.noShowOccurrences
+        : db.rescheduleRecords;
+    const item = list.find((x) => x.id === itemId);
+    if (item && !item.readByAdmin) {
+      item.readByAdmin = true;
+      this.saveState(db);
     }
-
-    if (target && !target.isReadByAdmin) {
-      const now = new Date().toISOString();
-      target.isReadByAdmin = true;
-      target.readByAdminAt = now;
-      target.readByAdminName = actorUser.name;
-      this.appendAudit(
-        db,
-        actorUser.email,
-        'REPORT_READ_BY_ADMIN',
-        `Registro (${recordType}) de "${target.clientName}" marcado como LIDO pelo administrador.`
-      );
-      this.saveDb(db);
-    }
-    return { ok: true };
   }
 
-  markNotificationAsRead(userId, notificationId = null) {
-    const db = this.getDb();
-    let changed = false;
+  markAllNotificationsRead(userId) {
+    const db = this.getState();
     db.notifications.forEach((n) => {
-      if (n.userId === userId && !n.read && (!notificationId || n.id === notificationId)) {
-        n.read = true;
-        changed = true;
-      }
+      if (n.recipientId === userId) n.read = true;
     });
-    if (changed) {
-      this.saveDb(db);
+    this.saveState(db);
+  }
+
+  // Gestão de Usuários pelo Pablo
+  createUserAccount(actor, { name, email, password, role }) {
+    if (!actor || actor.role !== 'admin' || !actor.active) {
+      throw new Error('Apenas o Pablo pode criar contas de equipe.');
     }
+    if (!name?.trim() || !email?.trim() || !password || password.length < 6) {
+      throw new Error('Preencha nome, e-mail e senha com no mínimo 6 caracteres.');
+    }
+    const targetRole = role === 'sdr' ? 'sdr' : 'seller';
+    const db = this.getState();
+    const cleanEmail = email.trim().toLowerCase();
+    if (db.users.some((u) => u.email.toLowerCase() === cleanEmail)) {
+      throw new Error('Já existe uma conta cadastrada com este e-mail.');
+    }
+
+    const newUser = {
+      id: generateId('usr'),
+      name: name.trim(),
+      email: cleanEmail,
+      passwordHash: password,
+      role: targetRole,
+      active: true,
+      deleted: false,
+      createdAt: nowIso(),
+    };
+
+    db.users.push(newUser);
+    this.logAudit(db, actor.id, 'USER_CREATED', `Conta ${targetRole.toUpperCase()} criada: ${newUser.name}`);
+    this.saveState(db);
+    return newUser;
+  }
+
+  toggleUserActive(actor, targetUserId) {
+    if (!actor || actor.role !== 'admin' || !actor.active) {
+      throw new Error('Permissão negada.');
+    }
+    if (actor.id === targetUserId) {
+      throw new Error('O Pablo não pode desativar a própria conta.');
+    }
+    const db = this.getState();
+    const user = db.users.find((u) => u.id === targetUserId && !u.deleted);
+    if (!user) throw new Error('Usuário não encontrado.');
+
+    user.active = !user.active;
+    this.logAudit(
+      db,
+      actor.id,
+      user.active ? 'USER_REACTIVATED' : 'USER_DEACTIVATED',
+      `Conta de ${user.name} ${user.active ? 'reativada' : 'desativada'} pelo Pablo.`
+    );
+    this.saveState(db);
+    return user;
+  }
+
+  deleteUserAccount(actor, targetUserId, transferToSellerId = '') {
+    if (!actor || actor.role !== 'admin' || !actor.active) {
+      throw new Error('Permissão negada.');
+    }
+    if (actor.id === targetUserId) {
+      throw new Error('O Pablo não pode excluir a própria conta.');
+    }
+    const db = this.getState();
+    const user = db.users.find((u) => u.id === targetUserId && !u.deleted);
+    if (!user) throw new Error('Usuário não encontrado.');
+
+    if (user.role === 'seller' && transferToSellerId) {
+      const targetSeller = db.users.find(
+        (u) => u.id === transferToSellerId && u.role === 'seller' && u.active && !u.deleted && u.id !== targetUserId
+      );
+      if (targetSeller) {
+        db.clients.forEach((c) => {
+          if (c.assignedSellerId === targetUserId) {
+            c.assignedSellerId = targetSeller.id;
+            this.pushTimeline(
+              db,
+              c.id,
+              actor.id,
+              'REASSIGNED',
+              'Transferência por exclusão de conta',
+              `Carteira transferida pelo Pablo para ${targetSeller.name} após encerramento de ${user.name}.`
+            );
+          }
+        });
+      }
+    }
+
+    user.active = false;
+    user.deleted = true;
+    user.deletedAt = nowIso();
+    this.logAudit(db, actor.id, 'USER_DELETED', `Conta de ${user.name} (${user.email}) excluída com preservação histórica.`);
+    this.saveState(db);
+    return user;
   }
 }
 
 const dataEngine = new PontoWebDataEngine();
 
-/**
- * ============================================================================
- * COMPONENTES REUTILIZÁVEIS DO DESIGN SYSTEM
- * ============================================================================
- */
-function PontoWebLogo({ size = 34, showSubtitle = false, tokens }) {
+// ============================================================================
+// 5. CONTEXTO GLOBAL DA APLICAÇÃO
+// ============================================================================
+const AppContext = createContext(null);
+
+function useApp() {
+  return useContext(AppContext);
+}
+
+// ============================================================================
+// 6. COMPONENTES REUTILIZÁVEIS DO DESIGN SYSTEM
+// ============================================================================
+function PontoWebLogo({ size = 'md' }) {
+  const dim = size === 'lg' ? 'w-11 h-11 text-lg' : 'w-9 h-9 text-sm';
   return (
     <div className="flex items-center gap-3 select-none">
-      <img
-        src="/pontoweb-logo.jpg"
-        alt="PontoWeb"
+      <div
+        className={`${dim} rounded-xl flex items-center justify-center font-bold tracking-tight text-white relative overflow-hidden`}
         style={{
-          width: size,
-          height: size,
-          borderRadius: 11,
-          objectFit: 'cover',
-          boxShadow: tokens.glow,
-          border: '1px solid rgba(237, 224, 255, 0.25)',
+          background: 'linear-gradient(135deg, #8017FF 0%, #5010A8 100%)',
+          boxShadow: '0 0 22px rgba(128, 23, 255, 0.45)',
         }}
-        className="shrink-0"
-      />
-      <div className="flex flex-col">
-        <div className="flex items-center gap-1.5">
+      >
+        <span>PW</span>
+      </div>
+      <div>
+        <div className="font-semibold tracking-tight leading-none flex items-center gap-1.5">
+          <span>PontoWeb</span>
           <span
-            style={{ color: tokens.textPrimary }}
-            className="font-semibold tracking-tight text-base leading-none"
-          >
-            PontoWeb
-          </span>
-          <span
-            style={{
-              backgroundColor: 'rgba(128, 23, 255, 0.16)',
-              color: tokens.primary,
-              border: `1px solid rgba(128, 23, 255, 0.35)`,
-            }}
-            className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded-md"
+            className="text-[10px] uppercase tracking-widest px-1.5 py-0.5 rounded-md font-semibold"
+            style={{ backgroundColor: 'rgba(128, 23, 255, 0.16)', color: '#B87CFF' }}
           >
             CRM
           </span>
         </div>
-        {showSubtitle && (
-          <span style={{ color: tokens.textSecondary }} className="text-[11px] mt-1">
-            Commercial Operating System
-          </span>
-        )}
+        <p className="text-[11px] opacity-60 mt-0.5">Executive Revenue OS</p>
       </div>
     </div>
   );
 }
 
-function PwButton({
-  children,
-  onClick,
-  type = 'button',
-  variant = 'primary',
-  size = 'md',
-  disabled = false,
-  loading = false,
-  icon: Icon,
-  tokens,
-  className = '',
-  title,
-}) {
-  const handleClick = (e) => {
-    if (disabled || loading) return;
-    soundEngine.playSfx('click');
-    if (onClick) onClick(e);
-  };
-
-  const sizeStyles = {
-    xs: 'px-2.5 py-1.5 text-xs',
-    sm: 'px-3 py-2 text-xs',
-    md: 'px-4 py-2.5 text-sm',
-    lg: 'px-5 py-3 text-sm',
-  }[size];
-
-  const getVariantStyle = () => {
-    switch (variant) {
-      case 'primary':
-        return {
-          background: `linear-gradient(135deg, ${tokens.primary} 0%, ${tokens.primaryDark} 100%)`,
-          color: '#FFFFFF',
-          border: '1px solid rgba(237, 224, 255, 0.2)',
-          boxShadow: disabled ? 'none' : tokens.glow,
-        };
-      case 'whatsapp':
-        return {
-          backgroundColor: '#16845B',
-          color: '#FFFFFF',
-          border: '1px solid rgba(255, 255, 255, 0.18)',
-        };
-      case 'secondary':
-        return {
-          backgroundColor: tokens.surfaceElevated,
-          color: tokens.textPrimary,
-          border: `1px solid ${tokens.border}`,
-        };
-      case 'ghost':
-        return {
-          backgroundColor: 'transparent',
-          color: tokens.textSecondary,
-          border: '1px solid transparent',
-        };
-      case 'danger':
-        return {
-          backgroundColor: 'rgba(200, 62, 77, 0.14)',
-          color: tokens.error,
-          border: `1px solid rgba(200, 62, 77, 0.35)`,
-        };
-      default:
-        return {};
-    }
-  };
-
-  return (
-    <button
-      type={type}
-      title={title}
-      disabled={disabled || loading}
-      onClick={handleClick}
-      style={{
-        ...getVariantStyle(),
-        borderRadius: 11,
-      }}
-      className={`inline-flex items-center justify-center gap-2 font-medium transition-all duration-200 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed ${sizeStyles} ${className}`}
-    >
-      {loading ? (
-        <RefreshCw className="w-4 h-4 animate-spin" />
-      ) : (
-        Icon && <Icon className="w-4 h-4 shrink-0" />
-      )}
-      <span>{children}</span>
-    </button>
-  );
-}
-
-function PwInput({
-  label,
-  id,
-  type = 'text',
-  value,
-  onChange,
-  placeholder,
-  required = false,
-  error,
-  hint,
-  icon: Icon,
-  rightElement,
-  tokens,
-  disabled = false,
-}) {
-  const [focused, setFocused] = useState(false);
-
-  return (
-    <div className="flex flex-col gap-1.5">
-      {label && (
-        <label
-          htmlFor={id}
-          style={{ color: tokens.textPrimary }}
-          className="text-xs font-medium tracking-wide flex items-center justify-between"
-        >
-          <span>
-            {label} {required && <span style={{ color: tokens.primary }}>*</span>}
-          </span>
-        </label>
-      )}
-      <div
-        style={{
-          backgroundColor: tokens.bg,
-          borderColor: error ? tokens.error : focused ? tokens.primary : tokens.border,
-          boxShadow: focused ? `0 0 0 3px rgba(128, 23, 255, 0.16)` : 'none',
-          borderRadius: 11,
-        }}
-        className="flex items-center border px-3.5 py-2.5 transition-all duration-200"
-      >
-        {Icon && (
-          <Icon
-            style={{ color: focused ? tokens.primary : tokens.textSecondary }}
-            className="w-4 h-4 mr-2.5 shrink-0 transition-colors"
-          />
-        )}
-        <input
-          id={id}
-          type={type}
-          value={value}
-          onChange={onChange}
-          placeholder={placeholder}
-          required={required}
-          disabled={disabled}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
-          style={{ color: tokens.textPrimary }}
-          className="w-full bg-transparent text-sm outline-none placeholder:opacity-45 disabled:opacity-50"
-        />
-        {rightElement}
-      </div>
-      {error ? (
-        <span style={{ color: tokens.error }} className="text-xs flex items-center gap-1">
-          <XCircle className="w-3.5 h-3.5 shrink-0" />
-          {error}
-        </span>
-      ) : (
-        hint && (
-          <span style={{ color: tokens.textSecondary }} className="text-[11px]">
-            {hint}
-          </span>
-        )
-      )}
-    </div>
-  );
-}
-
-function PwTextarea({
-  label,
-  id,
-  value,
-  onChange,
-  placeholder,
-  required = false,
-  rows = 3,
-  hint,
-  tokens,
-}) {
-  const [focused, setFocused] = useState(false);
-
-  return (
-    <div className="flex flex-col gap-1.5">
-      {label && (
-        <label htmlFor={id} style={{ color: tokens.textPrimary }} className="text-xs font-medium">
-          {label} {required && <span style={{ color: tokens.primary }}>*</span>}
-        </label>
-      )}
-      <textarea
-        id={id}
-        rows={rows}
-        value={value}
-        onChange={onChange}
-        placeholder={placeholder}
-        required={required}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
-        style={{
-          backgroundColor: tokens.bg,
-          borderColor: focused ? tokens.primary : tokens.border,
-          boxShadow: focused ? `0 0 0 3px rgba(128, 23, 255, 0.16)` : 'none',
-          color: tokens.textPrimary,
-          borderRadius: 11,
-        }}
-        className="w-full border px-3.5 py-2.5 text-sm outline-none transition-all duration-200 placeholder:opacity-45 resize-y"
-      />
-      {hint && (
-        <span style={{ color: tokens.textSecondary }} className="text-[11px]">
-          {hint}
-        </span>
-      )}
-    </div>
-  );
-}
-
-function PwSelect({ label, id, value, onChange, options, required = false, tokens, disabled = false }) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      {label && (
-        <label htmlFor={id} style={{ color: tokens.textPrimary }} className="text-xs font-medium">
-          {label} {required && <span style={{ color: tokens.primary }}>*</span>}
-        </label>
-      )}
-      <select
-        id={id}
-        value={value}
-        onChange={onChange}
-        required={required}
-        disabled={disabled}
-        style={{
-          backgroundColor: tokens.bg,
-          borderColor: tokens.border,
-          color: tokens.textPrimary,
-          borderRadius: 11,
-        }}
-        className="w-full border px-3.5 py-2.5 text-sm outline-none focus:border-[#8017FF] transition-colors disabled:opacity-50"
-      >
-        {options.map((opt) => (
-          <option
-            key={opt.value}
-            value={opt.value}
-            style={{ backgroundColor: tokens.surface, color: tokens.textPrimary }}
-          >
-            {opt.label}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-}
-
-function PwCard({ children, tokens, glow = false, className = '', style = {}, onClick }) {
+function Card({ children, className = '', onClick, glow = false }) {
+  const { tokens } = useApp();
   return (
     <div
       onClick={onClick}
+      className={`rounded-xl border transition-all duration-200 ${onClick ? 'cursor-pointer hover:translate-y-[-1px]' : ''} ${className}`}
       style={{
         backgroundColor: tokens.surface,
-        borderColor: glow ? 'rgba(128, 23, 255, 0.45)' : tokens.border,
-        boxShadow: glow ? tokens.glow : 'none',
-        borderRadius: 13,
-        ...style,
+        borderColor: glow ? tokens.primary : tokens.border,
+        boxShadow: glow ? '0 0 24px rgba(128, 23, 255, 0.16)' : 'none',
       }}
-      className={`border transition-all duration-200 ${onClick ? 'cursor-pointer hover:border-[#8017FF]' : ''} ${className}`}
     >
       {children}
     </div>
   );
 }
 
-function PwBadge({ children, variant = 'neutral', tokens }) {
-  const styles = {
-    primary: {
-      backgroundColor: 'rgba(128, 23, 255, 0.15)',
-      color: tokens.primary,
-      border: '1px solid rgba(128, 23, 255, 0.32)',
-    },
-    success: {
-      backgroundColor: 'rgba(22, 132, 91, 0.16)',
-      color: tokens.success,
-      border: '1px solid rgba(22, 132, 91, 0.34)',
-    },
-    warning: {
-      backgroundColor: 'rgba(183, 121, 31, 0.16)',
-      color: tokens.warning,
-      border: '1px solid rgba(183, 121, 31, 0.34)',
-    },
-    error: {
-      backgroundColor: 'rgba(200, 62, 77, 0.16)',
-      color: tokens.error,
-      border: '1px solid rgba(200, 62, 77, 0.34)',
-    },
-    neutral: {
+function Button({
+  children,
+  variant = 'primary',
+  size = 'md',
+  onClick,
+  type = 'button',
+  disabled = false,
+  className = '',
+  sfx = 'click',
+}) {
+  const { tokens } = useApp();
+  const sizes = {
+    sm: 'px-3 py-1.5 text-xs',
+    md: 'px-4 py-2.5 text-sm',
+    lg: 'px-5 py-3 text-sm',
+  };
+
+  let style = {};
+  if (variant === 'primary') {
+    style = {
+      background: 'linear-gradient(135deg, #8017FF 0%, #6310CC 100%)',
+      color: '#FFFFFF',
+      boxShadow: disabled ? 'none' : '0 4px 18px rgba(128, 23, 255, 0.32)',
+    };
+  } else if (variant === 'secondary') {
+    style = {
       backgroundColor: tokens.surfaceElevated,
-      color: tokens.textSecondary,
+      color: tokens.text,
       border: `1px solid ${tokens.border}`,
-    },
-  }[variant];
+    };
+  } else if (variant === 'success') {
+    style = {
+      backgroundColor: tokens.success,
+      color: '#FFFFFF',
+    };
+  } else if (variant === 'danger') {
+    style = {
+      backgroundColor: tokens.error,
+      color: '#FFFFFF',
+    };
+  } else if (variant === 'warning') {
+    style = {
+      backgroundColor: tokens.warning,
+      color: '#FFFFFF',
+    };
+  } else if (variant === 'ghost') {
+    style = {
+      backgroundColor: 'transparent',
+      color: tokens.textSecondary,
+    };
+  }
+
+  const handleClick = (e) => {
+    if (disabled) return;
+    if (sfx) soundEngine.playSfx(sfx);
+    onClick?.(e);
+  };
 
   return (
+    <button
+      type={type}
+      disabled={disabled}
+      onClick={handleClick}
+      style={style}
+      className={`inline-flex items-center justify-center gap-2 rounded-xl font-medium transition-all duration-150 disabled:opacity-45 disabled:cursor-not-allowed active:scale-[0.98] ${sizes[size]} ${className}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function Badge({ children, tone = 'neutral' }) {
+  const { tokens } = useApp();
+  const map = {
+    primary: { bg: 'rgba(128, 23, 255, 0.16)', color: '#B97EFF', border: 'rgba(128, 23, 255, 0.35)' },
+    success: { bg: 'rgba(22, 132, 91, 0.16)', color: '#2AC78E', border: 'rgba(22, 132, 91, 0.35)' },
+    warning: { bg: 'rgba(183, 121, 31, 0.16)', color: '#F2B450', border: 'rgba(183, 121, 31, 0.35)' },
+    error: { bg: 'rgba(200, 62, 77, 0.16)', color: '#F27986', border: 'rgba(200, 62, 77, 0.35)' },
+    neutral: { bg: tokens.surfaceElevated, color: tokens.textSecondary, border: tokens.border },
+  };
+  const cfg = map[tone] || map.neutral;
+  return (
     <span
-      style={styles}
-      className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium whitespace-nowrap"
+      className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-xs font-medium border"
+      style={{ backgroundColor: cfg.bg, color: cfg.color, borderColor: cfg.border }}
     >
       {children}
     </span>
   );
 }
 
-function PwModal({ isOpen, onClose, title, subtitle, children, tokens, maxWidth = 'max-w-lg' }) {
-  useEffect(() => {
-    if (isOpen) {
-      soundEngine.playSfx('modal');
-    }
-  }, [isOpen]);
-
-  if (!isOpen) return null;
-
+function InputField({ label, required, error, className = '', ...props }) {
+  const { tokens } = useApp();
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+    <div className={className}>
+      {label && (
+        <label className="block text-xs font-medium mb-1.5" style={{ color: tokens.textSecondary }}>
+          {label} {required && <span style={{ color: tokens.primary }}>*</span>}
+        </label>
+      )}
+      <input
+        {...props}
+        className="w-full px-3.5 py-2.5 rounded-xl text-sm border outline-none transition-all focus:ring-2"
+        style={{
+          backgroundColor: tokens.surfaceElevated,
+          borderColor: error ? tokens.error : tokens.border,
+          color: tokens.text,
+          '--tw-ring-color': 'rgba(128, 23, 255, 0.45)',
+        }}
+      />
+      {error && (
+        <p className="text-xs mt-1" style={{ color: tokens.error }}>
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function TextAreaField({ label, required, rows = 3, className = '', ...props }) {
+  const { tokens } = useApp();
+  return (
+    <div className={className}>
+      {label && (
+        <label className="block text-xs font-medium mb-1.5" style={{ color: tokens.textSecondary }}>
+          {label} {required && <span style={{ color: tokens.primary }}>*</span>}
+        </label>
+      )}
+      <textarea
+        rows={rows}
+        {...props}
+        className="w-full px-3.5 py-2.5 rounded-xl text-sm border outline-none transition-all focus:ring-2 resize-y"
+        style={{
+          backgroundColor: tokens.surfaceElevated,
+          borderColor: tokens.border,
+          color: tokens.text,
+          '--tw-ring-color': 'rgba(128, 23, 255, 0.45)',
+        }}
+      />
+    </div>
+  );
+}
+
+function SelectField({ label, required, children, className = '', ...props }) {
+  const { tokens } = useApp();
+  return (
+    <div className={className}>
+      {label && (
+        <label className="block text-xs font-medium mb-1.5" style={{ color: tokens.textSecondary }}>
+          {label} {required && <span style={{ color: tokens.primary }}>*</span>}
+        </label>
+      )}
+      <select
+        {...props}
+        className="w-full px-3.5 py-2.5 rounded-xl text-sm border outline-none transition-all focus:ring-2"
+        style={{
+          backgroundColor: tokens.surfaceElevated,
+          borderColor: tokens.border,
+          color: tokens.text,
+          '--tw-ring-color': 'rgba(128, 23, 255, 0.45)',
+        }}
+      >
+        {children}
+      </select>
+    </div>
+  );
+}
+
+function Modal({ open, onClose, title, subtitle, children, maxWidth = 'max-w-2xl' }) {
+  const { tokens } = useApp();
+  useEffect(() => {
+    if (open) soundEngine.playSfx('whoosh');
+  }, [open]);
+
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
       <div
+        className={`w-full ${maxWidth} rounded-2xl border shadow-2xl max-h-[90vh] flex flex-col overflow-hidden`}
         style={{
           backgroundColor: tokens.surface,
           borderColor: tokens.border,
-          boxShadow: tokens.glowStrong,
-          borderRadius: 14,
+          color: tokens.text,
+          boxShadow: '0 24px 64px rgba(0,0,0,0.65), 0 0 32px rgba(128,23,255,0.18)',
         }}
-        className={`w-full ${maxWidth} border p-6 relative max-h-[90vh] overflow-y-auto`}
       >
-        <div className="flex items-start justify-between gap-4 mb-4">
-          <div>
-            <h3 style={{ color: tokens.textPrimary }} className="text-base font-semibold">
-              {title}
-            </h3>
-            {subtitle && (
-              <p style={{ color: tokens.textSecondary }} className="text-xs mt-1 leading-relaxed">
-                {subtitle}
-              </p>
-            )}
-          </div>
+        <div
+          className="px-6 py-4 border-b flex items-center justify-between gap-4 shrink-0"
+          style={{ borderColor: tokens.border, color: tokens.text }}
+        >
+          <h3 className="text-base font-semibold" style={{ color: tokens.text }}>
+            {title}
+          </h3>
           <button
-            type="button"
             onClick={() => {
               soundEngine.playSfx('click');
               onClose();
             }}
-            style={{
-              backgroundColor: tokens.surfaceElevated,
-              borderColor: tokens.border,
-              color: tokens.textSecondary,
-              borderRadius: 10,
-            }}
-            className="p-1.5 border hover:opacity-80 shrink-0"
+            className="p-1.5 rounded-lg hover:opacity-80 transition-opacity"
+            style={{ backgroundColor: tokens.surfaceElevated, color: tokens.textSecondary }}
           >
             <X className="w-4 h-4" />
           </button>
         </div>
-        {children}
+        <div
+          className="p-6 overflow-y-auto space-y-5"
+          style={{ color: tokens.text }}
+        >
+          {subtitle && (
+            <p className="text-xs leading-relaxed" style={{ color: tokens.textSecondary }}>
+              {subtitle}
+            </p>
+          )}
+          {children}
+        </div>
       </div>
     </div>
   );
 }
 
-function PwEmptyState({ icon: Icon, title, description, action, tokens }) {
+function EmptyState({ icon: Icon, title, description, action }) {
+  const { tokens } = useApp();
   return (
-    <div
-      style={{
-        backgroundColor: tokens.surface,
-        borderColor: tokens.border,
-        borderRadius: 13,
-      }}
-      className="border border-dashed p-8 text-center flex flex-col items-center justify-center"
-    >
+    <Card className="p-8 text-center flex flex-col items-center justify-center space-y-3">
       <div
-        style={{
-          backgroundColor: 'rgba(128, 23, 255, 0.12)',
-          color: tokens.primary,
-          borderRadius: 12,
-        }}
-        className="w-11 h-11 flex items-center justify-center mb-3"
+        className="w-12 h-12 rounded-2xl flex items-center justify-center"
+        style={{ backgroundColor: 'rgba(128, 23, 255, 0.14)', color: '#B87CFF' }}
       >
-        <Icon className="w-5 h-5" />
+        <Icon className="w-6 h-6" />
       </div>
-      <h4 style={{ color: tokens.textPrimary }} className="text-sm font-semibold">
-        {title}
-      </h4>
-      <p style={{ color: tokens.textSecondary }} className="text-xs mt-1 max-w-md leading-relaxed">
+      <h4 className="text-sm font-semibold" style={{ color: tokens.text }}>{title}</h4>
+      <p className="text-xs max-w-md" style={{ color: tokens.textSecondary }}>
         {description}
       </p>
-      {action && <div className="mt-4">{action}</div>}
-    </div>
+      {action && <div className="pt-2">{action}</div>}
+    </Card>
   );
 }
 
-function PwToast({ toast, onDismiss, tokens }) {
-  if (!toast) return null;
-  const palette = {
-    success: { border: tokens.success, icon: CheckCircle2, color: tokens.success },
-    error: { border: tokens.error, icon: XCircle, color: tokens.error },
-    warning: { border: tokens.warning, icon: AlertTriangle, color: tokens.warning },
-    info: { border: tokens.primary, icon: Info, color: tokens.primary },
-  }[toast.type || 'info'];
-
-  const Icon = palette.icon;
-
-  return (
-    <div
-      style={{
-        backgroundColor: tokens.surfaceElevated,
-        borderColor: palette.border,
-        boxShadow: tokens.glowStrong,
-        borderRadius: 12,
-      }}
-      className="fixed bottom-5 right-5 z-50 max-w-sm w-full border p-3.5 flex items-start gap-3"
-    >
-      <Icon style={{ color: palette.color }} className="w-5 h-5 shrink-0 mt-0.5" />
-      <div className="flex-1 text-xs">
-        <p style={{ color: tokens.textPrimary }} className="font-semibold">
-          {toast.title}
-        </p>
-        <p style={{ color: tokens.textSecondary }} className="mt-0.5 leading-relaxed">
-          {toast.message}
-        </p>
-      </div>
-      <button
-        onClick={onDismiss}
-        style={{ color: tokens.textSecondary }}
-        className="text-xs hover:opacity-80"
-      >
-        Fechar
-      </button>
-    </div>
-  );
+function getUserDisplayName(users, userId) {
+  if (!userId) return 'Não atribuído';
+  const u = users.find((x) => x.id === userId);
+  if (!u) return 'Usuário desconhecido';
+  return u.deleted ? `${u.name} (conta excluída)` : u.name;
 }
 
-/**
- * ============================================================================
- * PAINEL DE CONTAGEM DE VENDAS & METAS (SEM GRÁFICO E SEM EMOJI)
- * ============================================================================
- */
-function SalesCountAndCommissionCard({ salesCount, totalSoldValue, tokens }) {
-  const commissionPct = getCommissionPercentage(salesCount);
-  const estimatedCommission = totalSoldValue * (commissionPct / 100);
-
-  const MIN_GOAL = 4;
-  const MAX_GOAL = 8; // "+7 vendas" => a partir de 8 vendas
-
-  const reachedMin = salesCount >= MIN_GOAL;
-  const reachedMax = salesCount >= MAX_GOAL;
-
-  const missingToMin = Math.max(0, MIN_GOAL - salesCount);
-  const missingToMax = Math.max(0, MAX_GOAL - salesCount);
-
-  return (
-    <PwCard tokens={tokens} glow className="p-5 flex flex-col gap-4">
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div>
-          <h3 style={{ color: tokens.textPrimary }} className="text-sm font-semibold">
-            Contagem de Vendas
-          </h3>
-          <p style={{ color: tokens.textSecondary }} className="text-xs mt-1">
-            Acompanhamento de fechamentos válidos e faixa de comissão vigente.
-          </p>
-        </div>
-
-        {/* Canto superior direito: porcentagem de comissão */}
-        <div
-          style={{
-            backgroundColor: 'rgba(128, 23, 255, 0.14)',
-            borderColor: 'rgba(128, 23, 255, 0.42)',
-            boxShadow: tokens.glow,
-            borderRadius: 12,
-          }}
-          className="border px-3.5 py-2 text-right shrink-0"
-        >
-          <span
-            style={{ color: tokens.textSecondary }}
-            className="text-[10px] uppercase tracking-wider font-semibold block"
-          >
-            Sua Comissão Atual
-          </span>
-          <div className="flex items-baseline justify-end gap-1.5 mt-0.5">
-            <span style={{ color: tokens.primary }} className="text-2xl font-bold leading-none">
-              {commissionPct}%
-            </span>
-            <span style={{ color: tokens.textSecondary }} className="text-[11px]">
-              ({salesCount} {salesCount === 1 ? 'venda' : 'vendas'})
-            </span>
-          </div>
-          <span style={{ color: tokens.success }} className="text-[11px] font-medium block mt-1">
-            Ganho estimado: {formatCurrencyBRL(estimatedCommission)}
-          </span>
-        </div>
-      </div>
-
-      {/* Resumo de Contagem e Progresso de Metas */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div
-          style={{ backgroundColor: tokens.bg, borderColor: tokens.border, borderRadius: 11 }}
-          className="border p-3.5 flex flex-col justify-between"
-        >
-          <span style={{ color: tokens.textSecondary }} className="text-[11px] uppercase tracking-wider font-semibold">
-            Vendas Realizadas
-          </span>
-          <div className="flex items-baseline gap-2 mt-1">
-            <span style={{ color: tokens.textPrimary }} className="text-2xl font-bold">
-              {salesCount}
-            </span>
-            <span style={{ color: tokens.textSecondary }} className="text-xs">
-              {salesCount === 1 ? 'venda concluída' : 'vendas concluídas'}
-            </span>
-          </div>
-          <div className="mt-2 pt-2 border-t text-[11px]" style={{ borderColor: tokens.border }}>
-            {!reachedMin ? (
-              <span style={{ color: tokens.warning }} className="font-medium">
-                Faltam {missingToMin} {missingToMin === 1 ? 'venda' : 'vendas'} para atingir a Meta Mínima
-              </span>
-            ) : !reachedMax ? (
-              <span style={{ color: tokens.primary }} className="font-medium">
-                Meta Mínima concluída! Faltam {missingToMax} {missingToMax === 1 ? 'venda' : 'vendas'} para atingir a Meta Máxima
-              </span>
-            ) : (
-              <span style={{ color: tokens.success }} className="font-semibold">
-                Meta Máxima atingida! Você superou +7 vendas
-              </span>
-            )}
-          </div>
-        </div>
-
-        <div
-          style={{ backgroundColor: tokens.bg, borderColor: tokens.border, borderRadius: 11 }}
-          className="border p-3.5 flex flex-col justify-between"
-        >
-          <span style={{ color: tokens.textSecondary }} className="text-[11px] uppercase tracking-wider font-semibold">
-            Tabela Escalonada de Ganhos
-          </span>
-          <div className="flex flex-wrap gap-1.5 mt-2">
-            {[
-              { label: 'Até 5: 30%', active: salesCount <= 5 },
-              { label: '6–7: 35%', active: salesCount >= 6 && salesCount <= 7 },
-              { label: '8: 40%', active: salesCount === 8 },
-              { label: '9: 45%', active: salesCount === 9 },
-              { label: '10+: 50%', active: salesCount >= 10 },
-            ].map((tier) => (
-              <span
-                key={tier.label}
-                style={{
-                  backgroundColor: tier.active ? 'rgba(128, 23, 255, 0.18)' : tokens.surface,
-                  borderColor: tier.active ? tokens.primary : tokens.border,
-                  color: tier.active ? tokens.primary : tokens.textSecondary,
-                }}
-                className="text-[11px] font-medium px-2.5 py-1 rounded-md border"
-              >
-                {tier.label}
-              </span>
-            ))}
-          </div>
-          <span style={{ color: tokens.textSecondary }} className="text-[11px] mt-2">
-            Meta Mínima: 4 vendas • Meta Máxima: +7 vendas
-          </span>
-        </div>
-      </div>
-    </PwCard>
-  );
-}
-
-/**
- * ============================================================================
- * VISUALIZAÇÃO E MODAL DE DETALHES DE RELATÓRIOS & OCORRÊNCIAS
- * ============================================================================
- */
-function ReportDetailModal({ record, onClose, tokens }) {
-  if (!record) return null;
-
-  const isReport = record.recordType === 'MEETING_REPORT';
-  const isNoShow = record.recordType === 'NO_SHOW';
-  const isReschedule = record.recordType === 'RESCHEDULE';
-
-  const statusLabels = {
-    completed: 'Concluída',
-    pending_payment: 'Pagamento pendente',
-    cancelled: 'Cancelada',
-    refunded: 'Reembolsada',
-  };
-
-  return (
-    <PwModal
-      isOpen={Boolean(record)}
-      onClose={onClose}
-      title={
-        isReport
-          ? `Registro dos Dados & Venda — ${record.clientName}`
-          : isNoShow
-          ? `Ocorrência de Vácuo — ${record.clientName}`
-          : `Reagendamento — ${record.clientName}`
-      }
-      subtitle={`Vendedor: ${record.sellerName} • Registrado em ${formatSaoPauloDateTime(record.createdAt)}`}
-      tokens={tokens}
-      maxWidth="max-w-3xl"
-    >
-      {isReport && (
-        <div className="flex flex-col gap-4 text-xs">
-          {/* Reunião de vendas: Infos */}
-          <div
-            style={{ backgroundColor: tokens.bg, borderColor: tokens.border, borderRadius: 11 }}
-            className="border p-4"
-          >
-            <h4 style={{ color: tokens.primary }} className="font-semibold uppercase tracking-wider mb-2">
-              Reunião de vendas: Infos
-            </h4>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              <div>
-                <span style={{ color: tokens.textSecondary }}>Data/horário:</span>{' '}
-                <strong style={{ color: tokens.textPrimary }}>
-                  {formatMeetingSchedule(record.sectionA?.scheduledDate, record.sectionA?.scheduledTime, true)}
-                </strong>
-              </div>
-              <div>
-                <span style={{ color: tokens.textSecondary }}>Status:</span>{' '}
-                <strong style={{ color: tokens.success }}>{record.sectionA?.status || 'Realizada'}</strong>
-              </div>
-              <div>
-                <span style={{ color: tokens.textSecondary }}>Reagendamentos anteriores:</span>{' '}
-                <strong style={{ color: tokens.textPrimary }}>
-                  {record.sectionA?.previousReschedulesCount ?? 0}
-                </strong>
-              </div>
-            </div>
-          </div>
-
-          {/* Registro da Venda */}
-          {record.saleInfo && (
-            <div
-              style={{
-                backgroundColor: 'rgba(22, 132, 91, 0.08)',
-                borderColor: 'rgba(22, 132, 91, 0.35)',
-                borderRadius: 11,
-              }}
-              className="border p-4"
-            >
-              <h4 style={{ color: tokens.success }} className="font-semibold uppercase tracking-wider mb-2">
-                Registro da Venda (Serviço: Site)
-              </h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                <div>
-                  <span style={{ color: tokens.textSecondary }}>Status financeiro:</span>{' '}
-                  <strong style={{ color: tokens.textPrimary }}>
-                    {statusLabels[record.saleInfo.saleStatus] || record.saleInfo.saleStatus}
-                  </strong>
-                </div>
-                <div>
-                  <span style={{ color: tokens.textSecondary }}>Modalidade:</span>{' '}
-                  <strong style={{ color: tokens.textPrimary }}>
-                    {record.saleInfo.paymentStructure === '50_50' ? '50/50' : 'Pagamento imediato'}
-                  </strong>
-                </div>
-                <div>
-                  <span style={{ color: tokens.textSecondary }}>Valor vendido:</span>{' '}
-                  <strong style={{ color: tokens.textPrimary }}>
-                    {formatCurrencyBRL(record.saleInfo.saleValue)}
-                  </strong>
-                </div>
-                <div>
-                  <span style={{ color: tokens.textSecondary }}>Valor enviado:</span>{' '}
-                  <strong style={{ color: tokens.success }}>
-                    {formatCurrencyBRL(record.saleInfo.sentValue)}
-                  </strong>
-                </div>
-                <div className="sm:col-span-2">
-                  <span style={{ color: tokens.textSecondary }}>Método de pagamento:</span>{' '}
-                  <strong style={{ color: tokens.textPrimary }}>{record.saleInfo.paymentMethod}</strong>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Registro dos Dados — Negócio & Oferta + Dificuldades / Necessidades */}
-          <div
-            style={{ backgroundColor: tokens.bg, borderColor: tokens.border, borderRadius: 11 }}
-            className="border p-4 flex flex-col gap-2.5"
-          >
-            <h4 style={{ color: tokens.primary }} className="font-semibold uppercase tracking-wider">
-              Registro dos Dados — Negócio, Oferta & Necessidades
-            </h4>
-            <div>
-              <span style={{ color: tokens.textSecondary }}>Negócio & Oferta:</span>
-              <p style={{ color: tokens.textPrimary }} className="mt-0.5 leading-relaxed">
-                {record.sectionB?.businessAndOffer || 'Não informado'}
-              </p>
-            </div>
-            <div>
-              <span style={{ color: tokens.textSecondary }}>Dificuldades / Necessidades:</span>
-              <p style={{ color: tokens.textPrimary }} className="mt-0.5 leading-relaxed">
-                {record.sectionB?.difficultiesAndNeeds || 'Não informado'}
-              </p>
-            </div>
-          </div>
-
-          {/* Solução & Proposta */}
-          <div
-            style={{ backgroundColor: tokens.bg, borderColor: tokens.border, borderRadius: 11 }}
-            className="border p-4 flex flex-col gap-2.5"
-          >
-            <h4 style={{ color: tokens.primary }} className="font-semibold uppercase tracking-wider">
-              Solução & Proposta
-            </h4>
-            <div>
-              <span style={{ color: tokens.textSecondary }}>Como um site pode ajudar este cliente:</span>
-              <p style={{ color: tokens.textPrimary }} className="mt-0.5 leading-relaxed">
-                {record.sectionC?.howSiteHelpsClient || 'Não informado'}
-              </p>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-              <div>
-                <span style={{ color: tokens.textSecondary }}>Hospedagem / Domínio:</span>{' '}
-                <strong style={{ color: tokens.primary }}>{record.sectionC?.domainProvider || 'Não informado'}</strong>
-              </div>
-              <div>
-                <span style={{ color: tokens.textSecondary }}>Próxima call apresentando o site:</span>{' '}
-                <strong style={{ color: tokens.textPrimary }}>
-                  {record.sectionC?.nextSiteCallDate
-                    ? formatMeetingSchedule(record.sectionC.nextSiteCallDate, '', true)
-                    : 'Não informado'}
-                </strong>
-              </div>
-            </div>
-          </div>
-
-          {/* Autoavaliação e Depoimento Geral */}
-          <div
-            style={{ backgroundColor: tokens.bg, borderColor: tokens.border, borderRadius: 11 }}
-            className="border p-4 flex flex-col gap-2.5"
-          >
-            <h4 style={{ color: tokens.primary }} className="font-semibold uppercase tracking-wider">
-              Autoavaliação & Depoimento do Vendedor
-            </h4>
-            <div>
-              <span style={{ color: tokens.textSecondary }}>Autoavaliação do atendimento:</span>
-              <p style={{ color: tokens.textPrimary }} className="mt-0.5 leading-relaxed">
-                {record.sectionF?.selfEvaluation || 'Não informado'}
-              </p>
-            </div>
-            <div>
-              <span style={{ color: tokens.textSecondary }}>Depoimento completo nas palavras do vendedor:</span>
-              <p style={{ color: tokens.textPrimary }} className="mt-0.5 leading-relaxed whitespace-pre-line">
-                {record.sectionF?.generalTestimonial || 'Não informado'}
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {isNoShow && (
-        <div
-          style={{ backgroundColor: tokens.bg, borderColor: tokens.border, borderRadius: 11 }}
-          className="border p-4 flex flex-col gap-3 text-xs"
-        >
-          <div className="flex items-center justify-between">
-            <span style={{ color: tokens.textSecondary }}>Motivo registrado:</span>
-            <PwBadge variant="warning" tokens={tokens}>
-              {record.reason}
-            </PwBadge>
-          </div>
-          <div>
-            <span style={{ color: tokens.textSecondary }}>Agendamento original:</span>{' '}
-            <strong style={{ color: tokens.textPrimary }}>
-              {formatMeetingSchedule(record.scheduledDate, record.scheduledTime, true)}
-            </strong>
-          </div>
-          <div>
-            <span style={{ color: tokens.textSecondary }}>Tentativas de contato:</span>{' '}
-            <strong style={{ color: tokens.textPrimary }}>{record.contactAttempts}</strong>
-          </div>
-          <div>
-            <span style={{ color: tokens.textSecondary }}>Descrição do ocorrido:</span>
-            <p style={{ color: tokens.textPrimary }} className="mt-1 leading-relaxed">
-              {record.description}
-            </p>
-          </div>
-          <div>
-            <span style={{ color: tokens.textSecondary }}>Evidências / Anexos:</span>
-            <p style={{ color: tokens.textPrimary }} className="mt-1">
-              {record.evidenceNote}
-            </p>
-          </div>
-        </div>
-      )}
-
-      {isReschedule && (
-        <div
-          style={{ backgroundColor: tokens.bg, borderColor: tokens.border, borderRadius: 11 }}
-          className="border p-4 flex flex-col gap-3 text-xs"
-        >
-          <div>
-            <span style={{ color: tokens.textSecondary }}>Programação anterior preservada:</span>{' '}
-            <strong style={{ color: tokens.textPrimary }}>
-              {formatMeetingSchedule(record.previousDate, record.previousTime, true)}
-            </strong>
-          </div>
-          <div>
-            <span style={{ color: tokens.textSecondary }}>Nova programação vigente:</span>{' '}
-            <strong style={{ color: tokens.primary }}>
-              {formatMeetingSchedule(record.newDate, record.newTime, true)}
-            </strong>
-          </div>
-          <div>
-            <span style={{ color: tokens.textSecondary }}>Motivo:</span>{' '}
-            <strong style={{ color: tokens.textPrimary }}>{record.reason}</strong>
-          </div>
-          <div>
-            <span style={{ color: tokens.textSecondary }}>Observações:</span>
-            <p style={{ color: tokens.textPrimary }} className="mt-1">
-              {record.notes}
-            </p>
-          </div>
-        </div>
-      )}
-
-      <div className="flex justify-end mt-5">
-        <PwButton variant="secondary" onClick={onClose} tokens={tokens}>
-          Fechar Detalhes
-        </PwButton>
-      </div>
-    </PwModal>
-  );
-}
-
-/**
- * ============================================================================
- * MODAL DE DOSSIÊ COMPLETO DO CLIENTE
- * ============================================================================
- */
-function ClientDossierModal({ client, db, onClose, onOpenRVendas, tokens }) {
-  if (!client) return null;
-
-  const meeting = db.meetings.find((m) => m.id === client.activeMeetingId);
-  const reports = db.meetingReports.filter((r) => r.clientId === client.id);
-  const occurrences = db.noShowOccurrences.filter((o) => o.clientId === client.id);
-  const reschedules = db.rescheduleRecords.filter((r) => r.clientId === client.id);
-  const clientSales = db.sales.filter((s) => s.clientId === client.id);
-  const responsibleLabel = dataEngine.resolveUserLabel(db, client.assignedSellerId, client.assignedSellerName);
-
-  const saleStatusLabel = {
-    completed: 'Concluída',
-    pending_payment: 'Pagamento pendente',
-    cancelled: 'Cancelada',
-    refunded: 'Reembolsada',
-  };
-
-  return (
-    <PwModal
-      isOpen={Boolean(client)}
-      onClose={onClose}
-      title={`Dossiê do Cliente — ${client.name}`}
-      subtitle={`Segmento: ${client.segment} • Responsável: ${responsibleLabel}`}
-      tokens={tokens}
-      maxWidth="max-w-3xl"
-    >
-      <div className="flex flex-col gap-4 text-xs">
-        <div
-          style={{ backgroundColor: tokens.bg, borderColor: tokens.border, borderRadius: 11 }}
-          className="border p-4 grid grid-cols-1 sm:grid-cols-2 gap-3"
-        >
-          <div>
-            <span style={{ color: tokens.textSecondary }}>WhatsApp:</span>{' '}
-            <strong style={{ color: tokens.textPrimary }}>{formatWhatsAppDisplay(client.whatsapp)}</strong>
-          </div>
-          <div>
-            <span style={{ color: tokens.textSecondary }}>Primeiro contato:</span>{' '}
-            <strong style={{ color: client.firstContactStatus === 'completed' ? tokens.success : tokens.warning }}>
-              {client.firstContactStatus === 'completed'
-                ? `Realizado em ${formatSaoPauloDateTime(client.firstContactAt)}`
-                : 'Pendente'}
-            </strong>
-          </div>
-          <div>
-            <span style={{ color: tokens.textSecondary }}>Reunião de Vendas vigente:</span>{' '}
-            <strong style={{ color: tokens.textPrimary }}>
-              {formatMeetingSchedule(client.meetingDate, client.meetingTime, true)}
-            </strong>
-          </div>
-          <div>
-            <span style={{ color: tokens.textSecondary }}>Status da reunião:</span>{' '}
-            <strong style={{ color: tokens.primary }}>
-              {client.meetingStatus === 'completed'
-                ? 'Realizada'
-                : client.meetingStatus === 'no_show'
-                ? 'Vácuo registrado'
-                : 'Agendada'}
-            </strong>
-          </div>
-          {client.notes && (
-            <div className="sm:col-span-2">
-              <span style={{ color: tokens.textSecondary }}>Observações iniciais:</span>{' '}
-              <span style={{ color: tokens.textPrimary }}>{client.notes}</span>
-            </div>
-          )}
-        </div>
-
-        {clientSales.length > 0 && (
-          <div
-            style={{
-              backgroundColor: 'rgba(22, 132, 91, 0.08)',
-              borderColor: 'rgba(22, 132, 91, 0.35)',
-              borderRadius: 11,
-            }}
-            className="border p-4 flex flex-col gap-2"
-          >
-            <h4 style={{ color: tokens.success }} className="font-semibold uppercase tracking-wider">
-              Registro de Venda
-            </h4>
-            {clientSales.map((sale) => (
-              <div key={sale.id} className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <div>
-                  <span style={{ color: tokens.textSecondary }}>Serviço:</span>{' '}
-                  <strong style={{ color: tokens.textPrimary }}>Site</strong>
-                </div>
-                <div>
-                  <span style={{ color: tokens.textSecondary }}>Status financeiro:</span>{' '}
-                  <strong style={{ color: tokens.textPrimary }}>
-                    {saleStatusLabel[sale.status] || sale.status}
-                  </strong>
-                </div>
-                <div>
-                  <span style={{ color: tokens.textSecondary }}>Valor vendido:</span>{' '}
-                  <strong style={{ color: tokens.textPrimary }}>{formatCurrencyBRL(sale.value)}</strong>
-                </div>
-                <div>
-                  <span style={{ color: tokens.textSecondary }}>Valor recebido:</span>{' '}
-                  <strong style={{ color: tokens.success }}>
-                    {formatCurrencyBRL(sale.receivedValue || 0)}
-                  </strong>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        <div className="grid grid-cols-3 gap-2.5">
-          <div
-            style={{ backgroundColor: tokens.bg, borderColor: tokens.border, borderRadius: 10 }}
-            className="border p-3 text-center"
-          >
-            <span style={{ color: tokens.textSecondary }} className="block text-[11px]">
-              Registros Enviados
-            </span>
-            <strong style={{ color: tokens.textPrimary }} className="text-base">
-              {reports.length}
-            </strong>
-          </div>
-          <div
-            style={{ backgroundColor: tokens.bg, borderColor: tokens.border, borderRadius: 10 }}
-            className="border p-3 text-center"
-          >
-            <span style={{ color: tokens.textSecondary }} className="block text-[11px]">
-              Reagendamentos
-            </span>
-            <strong style={{ color: tokens.textPrimary }} className="text-base">
-              {reschedules.length || meeting?.rescheduleCount || 0}
-            </strong>
-          </div>
-          <div
-            style={{ backgroundColor: tokens.bg, borderColor: tokens.border, borderRadius: 10 }}
-            className="border p-3 text-center"
-          >
-            <span style={{ color: tokens.textSecondary }} className="block text-[11px]">
-              Ocorrências de Vácuo
-            </span>
-            <strong style={{ color: tokens.textPrimary }} className="text-base">
-              {occurrences.length}
-            </strong>
-          </div>
-        </div>
-
-        <div>
-          <h4 style={{ color: tokens.textPrimary }} className="font-semibold mb-2">
-            Linha do Tempo Cronológica ({client.history?.length || 0} eventos)
-          </h4>
-          <div
-            style={{ backgroundColor: tokens.bg, borderColor: tokens.border, borderRadius: 11 }}
-            className="border p-3.5 max-h-60 overflow-y-auto flex flex-col gap-3"
-          >
-            {(client.history || []).map((ev) => (
-              <div
-                key={ev.id}
-                style={{ borderColor: tokens.border }}
-                className="border-l-2 pl-3 py-0.5 flex flex-col gap-0.5"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span style={{ color: tokens.textPrimary }} className="font-semibold">
-                    {ev.title}
-                  </span>
-                  <span style={{ color: tokens.textSecondary }} className="text-[11px]">
-                    {formatSaoPauloDateTime(ev.timestamp)}
-                  </span>
-                </div>
-                <p style={{ color: tokens.textSecondary }}>{ev.description}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="flex flex-wrap justify-between gap-2 pt-2">
-          <a
-            href={buildWhatsAppLink(client.whatsapp, client.name)}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={() => soundEngine.playSfx('click')}
-            style={{
-              backgroundColor: '#16845B',
-              color: '#FFFFFF',
-              borderRadius: 11,
-            }}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium"
-          >
-            <ExternalLink className="w-3.5 h-3.5" />
-            Abrir WhatsApp
-          </a>
-          <div className="flex items-center gap-2">
-            {client.meetingStatus !== 'completed' && onOpenRVendas && (
-              <PwButton
-                size="sm"
-                icon={Briefcase}
-                onClick={() => {
-                  onClose();
-                  onOpenRVendas(client);
-                }}
-                tokens={tokens}
-              >
-                R. Vendas
-              </PwButton>
-            )}
-            <PwButton variant="secondary" size="sm" onClick={onClose} tokens={tokens}>
-              Fechar Dossiê
-            </PwButton>
-          </div>
-        </div>
-      </div>
-    </PwModal>
-  );
-}
-
-/**
- * ============================================================================
- * MODAL UNIFICADO: R. VENDAS (REALIZADA + REGISTRO DOS DADOS / VÁCUO / REAGENDAMENTO)
- * ============================================================================
- */
-function RVendasModal({ client, meeting, currentUser, onClose, onSuccess, onError, tokens }) {
-  const [step, setStep] = useState('SELECT_OUTCOME');
-
-  // Reunião de vendas: Infos
-  const [previousReschedulesInput, setPreviousReschedulesInput] = useState(
-    String(meeting?.rescheduleCount ?? 0)
-  );
-
-  // Registro da Venda
-  const [saleStatus, setSaleStatus] = useState('completed');
-  const [paymentStructure, setPaymentStructure] = useState('immediate');
-  const [saleValue, setSaleValue] = useState('');
-  const [sentValue, setSentValue] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState('PIX');
-
-  // Registro dos Dados — Negócio & Oferta + Dificuldades / Necessidades
-  const [businessAndOffer, setBusinessAndOffer] = useState('');
-  const [difficultiesAndNeeds, setDifficultiesAndNeeds] = useState('');
-
-  // Solução & Proposta
-  const [howSiteHelpsClient, setHowSiteHelpsClient] = useState('');
-  const [domainProvider, setDomainProvider] = useState('Vercel');
-  const [nextSiteCallDate, setNextSiteCallDate] = useState('');
-
-  // Autoavaliação e Depoimento Geral
-  const [selfEvaluation, setSelfEvaluation] = useState('');
-  const [generalTestimonial, setGeneralTestimonial] = useState('');
-
-  // Estados Vácuo
-  const [noShowReason, setNoShowReason] = useState('Cliente não compareceu');
-  const [noShowDescription, setNoShowDescription] = useState('');
-  const [contactAttempts, setContactAttempts] = useState('2');
-  const [evidenceNote, setEvidenceNote] = useState('');
-
-  // Estados Reagendamento
-  const [newDate, setNewDate] = useState('');
-  const [newTime, setNewTime] = useState('');
-  const [rescheduleReason, setRescheduleReason] = useState('');
-  const [rescheduleNotes, setRescheduleNotes] = useState('');
-
-  const [submitting, setSubmitting] = useState(false);
-
-  if (!client || !meeting) return null;
-
-  const handleReportSubmit = (e) => {
-    e.preventDefault();
-    setSubmitting(true);
-
-    const res = dataEngine.submitSalesMeetingReport(currentUser, client.id, {
-      previousReschedulesInput,
-      saleStatus,
-      paymentStructure,
-      saleValue,
-      sentValue,
-      paymentMethod,
-      businessAndOffer,
-      difficultiesAndNeeds,
-      howSiteHelpsClient,
-      domainProvider,
-      nextSiteCallDate,
-      selfEvaluation,
-      generalTestimonial,
-    });
-
-    setSubmitting(false);
-    if (!res.ok) {
-      soundEngine.playSfx('error');
-      onError(res.message);
-      return;
-    }
-
-    soundEngine.playSfx('success');
-    onSuccess(
-      'Registro dos Dados & Venda salvos! O administrador foi notificado imediatamente.'
-    );
-    onClose();
-  };
-
-  const handleNoShowSubmit = (e) => {
-    e.preventDefault();
-    setSubmitting(true);
-    const res = dataEngine.registerNoShowOccurrence(currentUser, client.id, {
-      reason: noShowReason,
-      description: noShowDescription,
-      contactAttempts,
-      evidenceNote,
-    });
-    setSubmitting(false);
-
-    if (!res.ok) {
-      soundEngine.playSfx('error');
-      onError(res.message);
-      return;
-    }
-
-    soundEngine.playSfx('warning');
-    onSuccess('Ocorrência de vácuo registrada no histórico e na lista de relatórios.');
-    onClose();
-  };
-
-  const handleRescheduleSubmit = (e) => {
-    e.preventDefault();
-    setSubmitting(true);
-    const res = dataEngine.rescheduleSalesMeeting(currentUser, client.id, {
-      newDate,
-      newTime,
-      reason: rescheduleReason,
-      notes: rescheduleNotes,
-    });
-    setSubmitting(false);
-
-    if (!res.ok) {
-      soundEngine.playSfx('error');
-      onError(res.message);
-      return;
-    }
-
-    soundEngine.playSfx('success');
-    onSuccess('Reunião reagendada! A programação anterior foi preservada no histórico.');
-    onClose();
-  };
-
-  return (
-    <PwModal
-      isOpen={Boolean(client)}
-      onClose={onClose}
-      title={
-        step === 'SELECT_OUTCOME'
-          ? 'Reunião de Vendas'
-          : step === 'REPORT'
-          ? 'Registro dos Dados'
-          : step === 'NO_SHOW'
-          ? 'Registrar Ocorrência de Vácuo'
-          : 'Reagendar Reunião de Vendas'
-      }
-      subtitle={
-        step === 'SELECT_OUTCOME'
-          ? `Cliente: ${client.name} • Agendada para ${formatMeetingSchedule(meeting.scheduledDate, meeting.scheduledTime, true)}`
-          : `Cliente: ${client.name} (${client.segment}) • Responsável: ${meeting.assignedSellerName}`
-      }
-      tokens={tokens}
-      maxWidth={step === 'REPORT' ? 'max-w-3xl' : 'max-w-xl'}
-    >
-      {step === 'SELECT_OUTCOME' && (
-        <div className="flex flex-col gap-4">
-          <div
-            style={{ backgroundColor: tokens.bg, borderColor: tokens.border, borderRadius: 11 }}
-            className="border p-4 text-xs leading-relaxed flex flex-col gap-2"
-          >
-            <p style={{ color: tokens.textPrimary }}>
-              Utilize esta opção após o horário previsto para a reunião ou quando precisar registrar o resultado do
-              atendimento. Escolha a situação correspondente para manter o histórico atualizado.
-            </p>
-            <p style={{ color: tokens.textSecondary }}>
-              Ao marcar a reunião como realizada, você deverá preencher o registro completo. Se o cliente não
-              compareceu ou não respondeu, registre a ocorrência. Caso a reunião tenha sido reagendada, informe a nova
-              data e o novo horário.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <button
-              type="button"
-              onClick={() => {
-                soundEngine.playSfx('click');
-                setStep('REPORT');
-              }}
-              style={{
-                backgroundColor: 'rgba(22, 132, 91, 0.12)',
-                borderColor: 'rgba(22, 132, 91, 0.4)',
-                borderRadius: 12,
-              }}
-              className="border p-4 text-left hover:scale-[1.01] transition-all flex flex-col gap-2"
-            >
-              <CheckCircle2 style={{ color: tokens.success }} className="w-6 h-6" />
-              <span style={{ color: tokens.textPrimary }} className="text-sm font-semibold">
-                Realizada
-              </span>
-              <span style={{ color: tokens.textSecondary }} className="text-[11px] leading-snug">
-                Abrir Registro dos Dados e Registro da Venda.
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                soundEngine.playSfx('click');
-                setStep('NO_SHOW');
-              }}
-              style={{
-                backgroundColor: 'rgba(200, 62, 77, 0.12)',
-                borderColor: 'rgba(200, 62, 77, 0.4)',
-                borderRadius: 12,
-              }}
-              className="border p-4 text-left hover:scale-[1.01] transition-all flex flex-col gap-2"
-            >
-              <XCircle style={{ color: tokens.error }} className="w-6 h-6" />
-              <span style={{ color: tokens.textPrimary }} className="text-sm font-semibold">
-                Vácuo
-              </span>
-              <span style={{ color: tokens.textSecondary }} className="text-[11px] leading-snug">
-                Cliente não compareceu, não respondeu ou cancelou.
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                soundEngine.playSfx('click');
-                setStep('RESCHEDULE');
-              }}
-              style={{
-                backgroundColor: 'rgba(128, 23, 255, 0.12)',
-                borderColor: 'rgba(128, 23, 255, 0.4)',
-                borderRadius: 12,
-              }}
-              className="border p-4 text-left hover:scale-[1.01] transition-all flex flex-col gap-2"
-            >
-              <CalendarClock style={{ color: tokens.primary }} className="w-6 h-6" />
-              <span style={{ color: tokens.textPrimary }} className="text-sm font-semibold">
-                Reagendamento
-              </span>
-              <span style={{ color: tokens.textSecondary }} className="text-[11px] leading-snug">
-                Definir nova data e horário mantendo histórico anterior.
-              </span>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {step === 'REPORT' && (
-        <form onSubmit={handleReportSubmit} className="flex flex-col gap-5">
-          {/* REUNIÃO DE VENDAS: INFOS */}
-          <div
-            style={{ backgroundColor: tokens.bg, borderColor: tokens.border, borderRadius: 12 }}
-            className="border p-4 flex flex-col gap-3"
-          >
-            <h4 style={{ color: tokens.primary }} className="text-xs font-semibold uppercase tracking-wider">
-              Reunião de vendas: Infos
-            </h4>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-              <div>
-                <span style={{ color: tokens.textSecondary }}>Data/horário:</span>
-                <p style={{ color: tokens.textPrimary }} className="font-medium mt-0.5">
-                  {formatMeetingSchedule(meeting.scheduledDate, meeting.scheduledTime, true)}
-                </p>
-              </div>
-              <div>
-                <span style={{ color: tokens.textSecondary }}>Status:</span>
-                <p style={{ color: tokens.success }} className="font-semibold mt-0.5">
-                  Realizada
-                </p>
-              </div>
-              <div>
-                <span style={{ color: tokens.textSecondary }}>Reagendamentos anteriores:</span>
-                <p style={{ color: tokens.textPrimary }} className="font-medium mt-0.5">
-                  {meeting.rescheduleCount || 0} registro(s)
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* REGISTRO DA VENDA */}
-          <div
-            style={{
-              backgroundColor: 'rgba(22, 132, 91, 0.08)',
-              borderColor: 'rgba(22, 132, 91, 0.38)',
-              borderRadius: 12,
-            }}
-            className="border p-4 flex flex-col gap-3"
-          >
-            <h4 style={{ color: tokens.success }} className="text-xs font-semibold uppercase tracking-wider">
-              Registro da Venda (Serviço: Site)
-            </h4>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <PwSelect
-                label="Status financeiro"
-                id="rep-sale-status"
-                required
-                value={saleStatus}
-                onChange={(e) => setSaleStatus(e.target.value)}
-                options={[
-                  { value: 'completed', label: 'Concluída' },
-                  { value: 'pending_payment', label: 'Pagamento pendente' },
-                  { value: 'cancelled', label: 'Cancelada' },
-                  { value: 'refunded', label: 'Reembolsada' },
-                ]}
-                tokens={tokens}
-              />
-
-              <div className="flex flex-col gap-1.5">
-                <label style={{ color: tokens.textPrimary }} className="text-xs font-medium">
-                  Pagamento imediato ou 50/50? <span style={{ color: tokens.primary }}>*</span>
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    { value: 'immediate', label: 'Pagamento imediato' },
-                    { value: '50_50', label: '50/50' },
-                  ].map((opt) => {
-                    const selected = paymentStructure === opt.value;
-                    return (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        onClick={() => {
-                          soundEngine.playSfx('click');
-                          setPaymentStructure(opt.value);
-                        }}
-                        style={{
-                          backgroundColor: selected ? 'rgba(128, 23, 255, 0.16)' : tokens.bg,
-                          borderColor: selected ? tokens.primary : tokens.border,
-                          color: selected ? tokens.primary : tokens.textSecondary,
-                          borderRadius: 11,
-                        }}
-                        className="border py-2.5 px-2.5 text-xs font-medium transition-all"
-                      >
-                        {opt.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <PwInput
-                label="Valor vendido (R$)"
-                id="rep-sale-value"
-                type="number"
-                required
-                value={saleValue}
-                onChange={(e) => setSaleValue(e.target.value)}
-                placeholder="Ex: 1500.00"
-                tokens={tokens}
-              />
-              <PwInput
-                label="Valor enviado (R$)"
-                id="rep-sent-value"
-                type="number"
-                required
-                value={sentValue}
-                onChange={(e) => setSentValue(e.target.value)}
-                placeholder="Ex: 750.00"
-                tokens={tokens}
-              />
-              <PwSelect
-                label="Método de pagamento"
-                id="rep-pay-method"
-                required
-                value={paymentMethod}
-                onChange={(e) => setPaymentMethod(e.target.value)}
-                options={[
-                  { value: 'PIX', label: 'PIX' },
-                  { value: 'Cartão de Crédito', label: 'Cartão de Crédito' },
-                  { value: 'Boleto Bancário', label: 'Boleto Bancário' },
-                  { value: 'Transferência Bancária', label: 'Transferência Bancária' },
-                ]}
-                tokens={tokens}
-              />
-            </div>
-          </div>
-
-          {/* REGISTRO DOS DADOS — NEGÓCIO & OFERTA + DIFICULDADES / NECESSIDADES */}
-          <div
-            style={{ backgroundColor: tokens.bg, borderColor: tokens.border, borderRadius: 12 }}
-            className="border p-4 flex flex-col gap-3"
-          >
-            <h4 style={{ color: tokens.primary }} className="text-xs font-semibold uppercase tracking-wider">
-              Registro dos Dados — Negócio, Oferta & Necessidades
-            </h4>
-
-            <PwTextarea
-              label="Negócio & Oferta"
-              id="rep-business-offer"
-              rows={3}
-              value={businessAndOffer}
-              onChange={(e) => setBusinessAndOffer(e.target.value)}
-              placeholder="Descreva o negócio do cliente, o que ele vende, público-alvo e a oferta apresentada..."
-              tokens={tokens}
-            />
-
-            <PwTextarea
-              label="Dificuldades / Necessidades"
-              id="rep-difficulties-needs"
-              rows={3}
-              value={difficultiesAndNeeds}
-              onChange={(e) => setDifficultiesAndNeeds(e.target.value)}
-              placeholder="Quais problemas e necessidades foram identificados durante a reunião?"
-              tokens={tokens}
-            />
-          </div>
-
-          {/* SOLUÇÃO & PROPOSTA */}
-          <div
-            style={{ backgroundColor: tokens.bg, borderColor: tokens.border, borderRadius: 12 }}
-            className="border p-4 flex flex-col gap-3"
-          >
-            <h4 style={{ color: tokens.primary }} className="text-xs font-semibold uppercase tracking-wider">
-              Solução & Proposta
-            </h4>
-
-            <PwTextarea
-              label="Como um site pode ajudar esse cliente em específico?"
-              id="rep-how-site-helps"
-              required
-              rows={3}
-              value={howSiteHelpsClient}
-              onChange={(e) => setHowSiteHelpsClient(e.target.value)}
-              placeholder="O que precisa ter no site? Ex: um site que apresente os produtos tipo um cardápio digital, um site estilo portfólio, um site de vendas padrão para negócio local..."
-              tokens={tokens}
-            />
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
-              <div className="flex flex-col gap-1.5">
-                <label style={{ color: tokens.textPrimary }} className="text-xs font-medium">
-                  O domínio é pela assinatura da Wix, ou vai ser gratuito por Vercel?{' '}
-                  <span style={{ color: tokens.primary }}>*</span>
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  {['Wix', 'Vercel'].map((provider) => {
-                    const active = domainProvider === provider;
-                    return (
-                      <button
-                        key={provider}
-                        type="button"
-                        onClick={() => {
-                          soundEngine.playSfx('click');
-                          setDomainProvider(provider);
-                        }}
-                        style={{
-                          backgroundColor: active ? 'rgba(128, 23, 255, 0.16)' : tokens.surface,
-                          borderColor: active ? tokens.primary : tokens.border,
-                          color: active ? tokens.primary : tokens.textSecondary,
-                          borderRadius: 11,
-                        }}
-                        className="border py-2.5 px-3 text-xs font-medium flex items-center justify-center gap-2 transition-all"
-                      >
-                        <span
-                          style={{
-                            borderColor: active ? tokens.primary : tokens.textSecondary,
-                            backgroundColor: active ? tokens.primary : 'transparent',
-                          }}
-                          className="w-3 h-3 rounded-full border inline-block"
-                        />
-                        {provider}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <PwInput
-                label="Qual a data para a próxima call apresentando o site?"
-                id="rep-next-site-call"
-                type="date"
-                required
-                value={nextSiteCallDate}
-                onChange={(e) => setNextSiteCallDate(e.target.value)}
-                tokens={tokens}
-              />
-            </div>
-          </div>
-
-          {/* AUTOAVALIAÇÃO E DEPOIMENTO GERAL */}
-          <div
-            style={{ backgroundColor: tokens.bg, borderColor: tokens.border, borderRadius: 12 }}
-            className="border p-4 flex flex-col gap-3"
-          >
-            <h4 style={{ color: tokens.primary }} className="text-xs font-semibold uppercase tracking-wider">
-              Autoavaliação & Depoimento do Vendedor
-            </h4>
-
-            <PwTextarea
-              label="Autoavaliação do atendimento"
-              id="rep-self-eval"
-              rows={2}
-              value={selfEvaluation}
-              onChange={(e) => setSelfEvaluation(e.target.value)}
-              placeholder="Pontos fortes, objeções enfrentadas e o que pode ser aprimorado..."
-              tokens={tokens}
-            />
-
-            <PwTextarea
-              label="Depoimento completo nas suas palavras"
-              id="rep-general-testimonial"
-              required
-              rows={5}
-              value={generalTestimonial}
-              onChange={(e) => setGeneralTestimonial(e.target.value)}
-              placeholder="Explique com suas próprias palavras tudo o que aconteceu na call, detalhes importantes do projeto, combinados com o cliente e observações gerais..."
-              tokens={tokens}
-            />
-          </div>
-
-          <div className="flex items-center justify-between gap-3 pt-1">
-            <PwButton type="button" variant="ghost" onClick={() => setStep('SELECT_OUTCOME')} tokens={tokens}>
-              Voltar
-            </PwButton>
-            <PwButton type="submit" loading={submitting} icon={CheckCircle2} tokens={tokens}>
-              Salvar Registro
-            </PwButton>
-          </div>
-        </form>
-      )}
-
-      {step === 'NO_SHOW' && (
-        <form onSubmit={handleNoShowSubmit} className="flex flex-col gap-4">
-          <PwSelect
-            label="Motivo da ocorrência"
-            id="ns-reason"
-            required
-            value={noShowReason}
-            onChange={(e) => setNoShowReason(e.target.value)}
-            options={[
-              { value: 'Cliente não compareceu', label: 'Cliente não compareceu' },
-              { value: 'Cliente não respondeu', label: 'Cliente não respondeu' },
-              { value: 'Cliente cancelou sem reagendar', label: 'Cliente cancelou sem reagendar' },
-              { value: 'Outro motivo', label: 'Outro motivo' },
-            ]}
-            tokens={tokens}
-          />
-          <PwTextarea
-            label="Descrição do ocorrido"
-            id="ns-desc"
-            required
-            rows={3}
-            value={noShowDescription}
-            onChange={(e) => setNoShowDescription(e.target.value)}
-            placeholder="Detalhe o que aconteceu no horário agendado..."
-            tokens={tokens}
-          />
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <PwInput
-              label="Tentativas de contato"
-              id="ns-attempts"
-              type="number"
-              value={contactAttempts}
-              onChange={(e) => setContactAttempts(e.target.value)}
-              tokens={tokens}
-            />
-            <PwInput
-              label="Evidências ou anexos (opcional)"
-              id="ns-evidence"
-              value={evidenceNote}
-              onChange={(e) => setEvidenceNote(e.target.value)}
-              placeholder="Ex: Print enviado no grupo / ligação sem resposta"
-              tokens={tokens}
-            />
-          </div>
-          <div className="flex items-center justify-between gap-3 pt-2">
-            <PwButton type="button" variant="ghost" onClick={() => setStep('SELECT_OUTCOME')} tokens={tokens}>
-              Voltar
-            </PwButton>
-            <PwButton type="submit" variant="danger" loading={submitting} icon={XCircle} tokens={tokens}>
-              Confirmar Ocorrência de Vácuo
-            </PwButton>
-          </div>
-        </form>
-      )}
-
-      {step === 'RESCHEDULE' && (
-        <form onSubmit={handleRescheduleSubmit} className="flex flex-col gap-4">
-          <div
-            style={{ backgroundColor: tokens.bg, borderColor: tokens.border, borderRadius: 11 }}
-            className="border p-3 text-xs"
-          >
-            <span style={{ color: tokens.textSecondary }}>Agendamento atual (será preservado no histórico): </span>
-            <strong style={{ color: tokens.textPrimary }}>
-              {formatMeetingSchedule(meeting.scheduledDate, meeting.scheduledTime, true)}
-            </strong>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <PwInput
-              label="Nova data"
-              id="rs-date"
-              type="date"
-              required
-              value={newDate}
-              onChange={(e) => setNewDate(e.target.value)}
-              tokens={tokens}
-            />
-            <PwInput
-              label="Novo horário (America/Sao_Paulo)"
-              id="rs-time"
-              type="time"
-              required
-              value={newTime}
-              onChange={(e) => setNewTime(e.target.value)}
-              tokens={tokens}
-            />
-          </div>
-          <PwInput
-            label="Motivo (opcional)"
-            id="rs-reason"
-            value={rescheduleReason}
-            onChange={(e) => setRescheduleReason(e.target.value)}
-            placeholder="Ex: Cliente solicitou mudança de horário"
-            tokens={tokens}
-          />
-          <PwTextarea
-            label="Observações (opcional)"
-            id="rs-notes"
-            rows={2}
-            value={rescheduleNotes}
-            onChange={(e) => setRescheduleNotes(e.target.value)}
-            placeholder="Informações complementares sobre o reagendamento..."
-            tokens={tokens}
-          />
-          <div className="flex items-center justify-between gap-3 pt-2">
-            <PwButton type="button" variant="ghost" onClick={() => setStep('SELECT_OUTCOME')} tokens={tokens}>
-              Voltar
-            </PwButton>
-            <PwButton type="submit" loading={submitting} icon={CalendarClock} tokens={tokens}>
-              Confirmar Reagendamento
-            </PwButton>
-          </div>
-        </form>
-      )}
-    </PwModal>
-  );
-}
-
-/**
- * ============================================================================
- * TELA DE AUTENTICAÇÃO
- * ============================================================================
- */
-function AuthScreen({ theme, onToggleTheme, onAuthenticated, showToast, tokens }) {
-  const [mode, setMode] = useState('login');
+// ============================================================================
+// 7. TELA DE AUTENTICAÇÃO & ACESSO RÁPIDO
+// ============================================================================
+function AuthScreen({ onAuthenticated }) {
+  const { tokens, theme, toggleTheme, notify } = useApp();
+  const [mode, setMode] = useState('login'); // login | reset
+  const [email, setEmail] = useState('tpablo488@gmail.com');
+  const [password, setPassword] = useState('PontoWeb@2026');
+  const [newPassword, setNewPassword] = useState('');
+  const [showPwd, setShowPwd] = useState(false);
   const [loading, setLoading] = useState(false);
-
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPass, setShowPass] = useState(false);
-
-  const [regName, setRegName] = useState('');
-  const [regEmail, setRegEmail] = useState('');
-  const [regPassword, setRegPassword] = useState('');
-
-  const [recEmail, setRecEmail] = useState('');
-  const [recCode, setRecCode] = useState('');
-  const [recNewPass, setRecNewPass] = useState('');
-  const [issuedDemoCode, setIssuedDemoCode] = useState('');
-
-  const [formError, setFormError] = useState('');
 
   const handleLogin = (e) => {
     e.preventDefault();
-    setFormError('');
     setLoading(true);
-
-    setTimeout(async () => {
-      const result = await dataEngine.authenticate(email, password);
-      setLoading(false);
-
-      if (!result.ok) {
-        soundEngine.playSfx('error');
-        setFormError(result.message);
-        return;
-      }
-
+    try {
+      const user = dataEngine.login(email, password);
       soundEngine.playSfx('success');
-      showToast('success', 'Acesso autorizado', `Bem-vindo(a), ${result.user.name}.`);
-      onAuthenticated(result.user);
-    }, 240);
+      notify(`Bem-vindo(a), ${user.name}!`, 'success');
+      onAuthenticated(user);
+    } catch (err) {
+      soundEngine.playSfx('error');
+      notify(err.message, 'error');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleRegister = (e) => {
+  const handleReset = (e) => {
     e.preventDefault();
-    setFormError('');
-    setLoading(true);
-
-    setTimeout(async () => {
-      const result = await dataEngine.createSellerAccount({
-        name: regName,
-        email: regEmail,
-        password: regPassword,
-        createdBy: 'SELF_SIGNUP',
-      });
-      setLoading(false);
-
-      if (!result.ok) {
-        soundEngine.playSfx('error');
-        setFormError(result.message);
-        return;
-      }
-
+    try {
+      dataEngine.resetPassword(email, newPassword);
       soundEngine.playSfx('success');
-      showToast(
-        'success',
-        'Conta de vendedor criada',
-        'Seu acesso foi provisionado automaticamente com perfil de Vendedor.'
-      );
-      setEmail(regEmail);
-      setPassword('');
+      notify('Senha redefinida com sucesso! Faça login com a nova senha.', 'success');
+      setPassword(newPassword);
+      setNewPassword('');
       setMode('login');
-    }, 240);
+    } catch (err) {
+      soundEngine.playSfx('error');
+      notify(err.message, 'error');
+    }
   };
 
-  const handleRequestRecovery = (e) => {
-    e.preventDefault();
-    setFormError('');
-    setLoading(true);
-
-    setTimeout(() => {
-      const result = dataEngine.requestPasswordRecovery(recEmail);
-      setLoading(false);
-
-      if (!result.ok) {
-        soundEngine.playSfx('error');
-        setFormError(result.message);
-        return;
-      }
-
-      soundEngine.playSfx('notification');
-      if (result.demoCode) setIssuedDemoCode(result.demoCode);
-      showToast('info', 'Recuperação processada', result.message);
-      setMode('reset_confirm');
-    }, 240);
-  };
-
-  const handleConfirmReset = (e) => {
-    e.preventDefault();
-    setFormError('');
-    setLoading(true);
-
-    setTimeout(() => {
-      const result = dataEngine.resetPasswordWithCode(recEmail, recCode, recNewPass);
-      setLoading(false);
-
-      if (!result.ok) {
-        soundEngine.playSfx('error');
-        setFormError(result.message);
-        return;
-      }
-
-      soundEngine.playSfx('success');
-      showToast('success', 'Senha redefinida', result.message);
-      setEmail(recEmail);
-      setIssuedDemoCode('');
-      setMode('login');
-    }, 240);
+  const fillQuickAccount = (accEmail, accPwd) => {
+    soundEngine.playSfx('click');
+    setEmail(accEmail);
+    setPassword(accPwd);
+    setMode('login');
   };
 
   return (
     <div
-      style={{ backgroundColor: tokens.bg, color: tokens.textPrimary }}
-      className="min-h-screen flex flex-col justify-between relative overflow-hidden"
+      className="min-h-screen flex flex-col justify-between p-4 sm:p-8 relative overflow-hidden"
+      style={{ backgroundColor: tokens.bg, color: tokens.text }}
     >
       <div
-        style={{
-          background: 'radial-gradient(circle, rgba(128,23,255,0.22) 0%, rgba(8,8,8,0) 70%)',
-        }}
-        className="pointer-events-none absolute -top-48 left-1/2 -translate-x-1/2 w-[780px] h-[520px] blur-3xl"
+        className="pointer-events-none absolute -top-40 left-1/2 -translate-x-1/2 w-[620px] h-[340px] rounded-full blur-[130px] opacity-25"
+        style={{ background: 'radial-gradient(circle, #8017FF 0%, transparent 70%)' }}
       />
 
-      <header className="relative z-10 w-full max-w-6xl mx-auto px-5 py-5 flex items-center justify-between">
-        <PontoWebLogo size={36} showSubtitle tokens={tokens} />
-        <button
-          onClick={() => {
-            soundEngine.playSfx('click');
-            onToggleTheme();
-          }}
-          style={{
-            backgroundColor: tokens.surface,
-            borderColor: tokens.border,
-            color: tokens.textPrimary,
-            borderRadius: 11,
-          }}
-          className="border p-2.5 flex items-center gap-2 text-xs font-medium hover:opacity-90 transition-opacity"
-        >
-          {theme === 'dark' ? <Sun className="w-4 h-4 text-[#EDE0FF]" /> : <Moon className="w-4 h-4 text-[#8017FF]" />}
-          <span className="hidden sm:inline">{theme === 'dark' ? 'Tema Claro' : 'Tema Escuro'}</span>
-        </button>
+      <header className="max-w-5xl w-full mx-auto flex items-center justify-between z-10">
+        <PontoWebLogo size="lg" />
+        <Button variant="secondary" size="sm" onClick={toggleTheme}>
+          {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          <span>{theme === 'dark' ? 'Tema Claro' : 'Tema Escuro'}</span>
+        </Button>
       </header>
 
-      <main className="relative z-10 flex-1 flex items-center justify-center px-4 py-8">
-        <div className="w-full max-w-md">
-          <PwCard tokens={tokens} glow className="p-7 sm:p-8">
-            <div className="mb-6">
-              <div className="inline-flex items-center gap-2 mb-3">
-                <PwBadge variant="primary" tokens={tokens}>
-                  <Lock className="w-3 h-3" /> Ambiente Corporativo Privado
-                </PwBadge>
-              </div>
-              <h1 style={{ color: tokens.textPrimary }} className="text-xl font-semibold tracking-tight">
-                {mode === 'login' && 'Acessar o PontoWeb CRM'}
-                {mode === 'register' && 'Criar Conta de Vendedor'}
-                {mode === 'recover' && 'Recuperação de Senha'}
-                {mode === 'reset_confirm' && 'Definir Nova Senha'}
-              </h1>
-              <p style={{ color: tokens.textSecondary }} className="text-xs mt-1.5 leading-relaxed">
-                {mode === 'login' && 'Entre com suas credenciais corporativas para gerenciar sua operação comercial.'}
-                {mode === 'register' && 'Novas contas recebem automaticamente o perfil de Vendedor.'}
-                {mode === 'recover' && 'Informe seu e-mail cadastrado para gerar um token seguro de redefinição.'}
-                {mode === 'reset_confirm' && 'Insira o código de verificação e escolha sua nova senha.'}
-              </p>
-            </div>
+      <main className="max-w-md w-full mx-auto my-8 z-10">
+        <Card glow className="p-6 sm:p-8 space-y-6">
+          <div>
+            <Badge tone="primary">Acesso Restrito • PontoWeb</Badge>
+            <h1 className="text-xl font-bold mt-2.5" style={{ color: tokens.text }}>
+              {mode === 'login' ? 'Entrar no PontoWeb CRM' : 'Recuperar Senha'}
+            </h1>
+            <p className="text-xs mt-1" style={{ color: tokens.textSecondary }}>
+              {mode === 'login'
+                ? 'Ambiente comercial privado para Pablo, Vendedores e SDR.'
+                : 'Informe seu e-mail cadastrado e defina uma nova senha de acesso.'}
+            </p>
+          </div>
 
-            {formError && (
-              <div
-                style={{
-                  backgroundColor: 'rgba(200, 62, 77, 0.12)',
-                  borderColor: 'rgba(200, 62, 77, 0.35)',
-                  color: tokens.error,
-                  borderRadius: 11,
-                }}
-                className="mb-5 border p-3 text-xs flex items-start gap-2.5"
-              >
-                <XCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                <span>{formError}</span>
-              </div>
-            )}
+          {mode === 'login' ? (
+            <form onSubmit={handleLogin} className="space-y-4">
+              <InputField
+                label="E-mail corporativo"
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="seuemail@pontoweb.com"
+              />
 
-            {mode === 'login' && (
-              <form onSubmit={handleLogin} className="flex flex-col gap-4">
-                <PwInput
-                  label="E-mail corporativo"
-                  id="login-email"
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="seuemail@pontoweb.com"
-                  icon={Mail}
-                  tokens={tokens}
-                />
-                <PwInput
+              <div className="relative">
+                <InputField
                   label="Senha"
-                  id="login-password"
-                  type={showPass ? 'text' : 'password'}
+                  type={showPwd ? 'text' : 'password'}
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  icon={KeyRound}
-                  tokens={tokens}
-                  rightElement={
-                    <button
-                      type="button"
-                      onClick={() => setShowPass((v) => !v)}
-                      style={{ color: tokens.textSecondary }}
-                      className="ml-2 hover:opacity-80"
-                    >
-                      {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  }
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPwd(!showPwd)}
+                  className="absolute right-3 top-8 opacity-60 hover:opacity-100"
+                  style={{ color: tokens.textSecondary }}
+                >
+                  {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
 
-                <div className="flex items-center justify-end">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      soundEngine.playSfx('click');
-                      setFormError('');
-                      setMode('recover');
-                    }}
-                    style={{ color: tokens.primary }}
-                    className="text-xs font-medium hover:underline"
-                  >
-                    Esqueci minha senha
-                  </button>
-                </div>
-
-                <PwButton type="submit" loading={loading} icon={ArrowRight} tokens={tokens} className="w-full mt-1">
-                  Entrar no Sistema
-                </PwButton>
-
-                <div style={{ borderColor: tokens.border }} className="pt-4 mt-2 border-t flex flex-col gap-3">
-                  <div className="flex items-center justify-between text-xs">
-                    <span style={{ color: tokens.textSecondary }}>Novo consultor comercial?</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        soundEngine.playSfx('click');
-                        setFormError('');
-                        setMode('register');
-                      }}
-                      style={{ color: tokens.primary }}
-                      className="font-medium hover:underline"
-                    >
-                      Cadastrar conta de vendedor
-                    </button>
-                  </div>
-                  </div>
-
-              </form>
-            )}
-
-            {mode === 'register' && (
-              <form onSubmit={handleRegister} className="flex flex-col gap-4">
-                <PwInput
-                  label="Nome completo"
-                  id="reg-name"
-                  required
-                  value={regName}
-                  onChange={(e) => setRegName(e.target.value)}
-                  placeholder="Ex: Lucas Mendes"
-                  icon={User}
-                  tokens={tokens}
-                />
-                <PwInput
-                  label="E-mail"
-                  id="reg-email"
-                  type="email"
-                  required
-                  value={regEmail}
-                  onChange={(e) => setRegEmail(e.target.value)}
-                  placeholder="consultor@pontoweb.com"
-                  icon={Mail}
-                  tokens={tokens}
-                />
-                <PwInput
-                  label="Senha (mínimo 8 caracteres)"
-                  id="reg-pass"
-                  type="password"
-                  required
-                  value={regPassword}
-                  onChange={(e) => setRegPassword(e.target.value)}
-                  placeholder="Crie uma senha forte"
-                  icon={KeyRound}
-                  tokens={tokens}
-                />
-                <PwButton type="submit" loading={loading} tokens={tokens} className="w-full mt-1">
-                  Criar Conta de Vendedor
-                </PwButton>
+              <div className="flex items-center justify-between text-xs">
                 <button
                   type="button"
                   onClick={() => {
                     soundEngine.playSfx('click');
-                    setFormError('');
-                    setMode('login');
+                    setMode('reset');
                   }}
-                  style={{ color: tokens.textSecondary }}
-                  className="text-xs text-center hover:underline mt-1"
+                  className="hover:underline"
+                  style={{ color: '#B87CFF' }}
                 >
-                  Voltar para o login
+                  Esqueci minha senha
                 </button>
-              </form>
-            )}
+              </div>
 
-            {mode === 'recover' && (
-              <form onSubmit={handleRequestRecovery} className="flex flex-col gap-4">
-                <PwInput
-                  label="E-mail cadastrado"
-                  id="rec-email"
-                  type="email"
-                  required
-                  value={recEmail}
-                  onChange={(e) => setRecEmail(e.target.value)}
-                  placeholder="seuemail@pontoweb.com"
-                  icon={Mail}
-                  tokens={tokens}
-                />
-                <PwButton type="submit" loading={loading} tokens={tokens} className="w-full">
-                  Solicitar Código de Recuperação
-                </PwButton>
-                <button
-                  type="button"
-                  onClick={() => {
-                    soundEngine.playSfx('click');
-                    setFormError('');
-                    setMode('login');
-                  }}
-                  style={{ color: tokens.textSecondary }}
-                  className="text-xs text-center hover:underline"
-                >
-                  Voltar para o login
-                </button>
-              </form>
-            )}
-
-            {mode === 'reset_confirm' && (
-              <form onSubmit={handleConfirmReset} className="flex flex-col gap-4">
-                {issuedDemoCode && (
-                  <div
-                    style={{
-                      backgroundColor: 'rgba(22, 132, 91, 0.14)',
-                      borderColor: 'rgba(22, 132, 91, 0.35)',
-                      color: tokens.success,
-                      borderRadius: 11,
-                    }}
-                    className="border p-3 text-xs"
-                  >
-                    Token seguro emitido para validação: <strong>{issuedDemoCode}</strong>
-                  </div>
-                )}
-                <PwInput
-                  label="Código de 6 dígitos"
-                  id="rec-code"
-                  required
-                  value={recCode}
-                  onChange={(e) => setRecCode(e.target.value)}
-                  placeholder="000000"
-                  icon={Shield}
-                  tokens={tokens}
-                />
-                <PwInput
-                  label="Nova senha (mínimo 8 caracteres)"
-                  id="rec-new-pass"
-                  type="password"
-                  required
-                  value={recNewPass}
-                  onChange={(e) => setRecNewPass(e.target.value)}
-                  placeholder="••••••••"
-                  icon={KeyRound}
-                  tokens={tokens}
-                />
-                <PwButton type="submit" loading={loading} tokens={tokens} className="w-full">
+              <Button type="submit" variant="primary" size="lg" className="w-full" disabled={loading}>
+                <Lock className="w-4 h-4" />
+                <span>{loading ? 'Autenticando...' : 'Acessar Sistema'}</span>
+              </Button>
+            </form>
+          ) : (
+            <form onSubmit={handleReset} className="space-y-4">
+              <InputField
+                label="E-mail da conta"
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+              <InputField
+                label="Nova senha (mínimo 6 caracteres)"
+                type="password"
+                required
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+              />
+              <div className="flex gap-2">
+                <Button variant="secondary" className="flex-1" onClick={() => setMode('login')}>
+                  Voltar
+                </Button>
+                <Button type="submit" variant="primary" className="flex-1">
                   Redefinir Senha
-                </PwButton>
-              </form>
-            )}
-          </PwCard>
-        </div>
+                </Button>
+              </div>
+            </form>
+          )}
+
+          {/* Acesso rápido provisório entre perfis */}
+          <div className="pt-4 border-t space-y-2" style={{ borderColor: tokens.border }}>
+            <p className="text-[11px] uppercase tracking-wider opacity-60 font-semibold">
+              Contas Provisionadas (Acesso Rápido):
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => fillQuickAccount('tpablo488@gmail.com', 'PontoWeb@2026')}
+                className="p-2.5 rounded-xl border text-left text-xs transition-all hover:border-[#8017FF]"
+                style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border, color: tokens.text }}
+              >
+                <div className="font-semibold text-[#B87CFF]">Pablo</div>
+                <div className="opacity-65 text-[10px] truncate">tpablo488@gmail.com</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => fillQuickAccount('rayvenart3@gmail.com', 'Vendas@2026')}
+                className="p-2.5 rounded-xl border text-left text-xs transition-all hover:border-[#8017FF]"
+                style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border, color: tokens.text }}
+              >
+                <div className="font-semibold text-[#2AC78E]">Vendedor</div>
+                <div className="opacity-65 text-[10px] truncate">rayvenart3@gmail.com</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => fillQuickAccount('sdr@pontoweb.com', 'Sdr@2026')}
+                className="p-2.5 rounded-xl border text-left text-xs transition-all hover:border-[#8017FF]"
+                style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border, color: tokens.text }}
+              >
+                <div className="font-semibold text-[#F2B450]">SDR</div>
+                <div className="opacity-65 text-[10px] truncate">sdr@pontoweb.com</div>
+              </button>
+            </div>
+          </div>
+        </Card>
       </main>
+
+      <footer className="text-center text-[11px] opacity-50 z-10">
+        PontoWeb CRM • Segurança RBAC, Auditoria & Persistência em Tempo Real
+      </footer>
     </div>
   );
 }
 
-/**
- * ============================================================================
- * CARD DE CLIENTE (FLUXO SEQUENCIAL DE PENDÊNCIAS + DIA DA SEMANA + WHATSAPP)
- * ============================================================================
- */
-function ClientOperationalCard({
-  client,
-  db,
-  currentUser,
-  onConfirmFirstContact,
-  onOpenReassign,
-  onOpenRVendas,
-  onOpenDossier,
-  showToast,
-  tokens,
-}) {
-  const [confirming, setConfirming] = useState(false);
+// ============================================================================
+// 8. MODAL DE REUNIÃO DE VENDAS (CALL ÚNICA: REALIZADA / VÁCUO / REAGENDAMENTO)
+// ============================================================================
+function MeetingActionModal({ open, onClose, client }) {
+  const { user, db, tokens, notify } = useApp();
+  const [step, setStep] = useState('choose'); // choose | completed | no_show | reschedule
 
-  const isContactDone = client.firstContactStatus === 'completed';
-  const isMeetingDone = client.meetingStatus === 'completed';
-  const isNoShow = client.meetingStatus === 'no_show';
-  const responsibleLabel = dataEngine.resolveUserLabel(db, client.assignedSellerId, client.assignedSellerName);
+  const [noShowForm, setNoShowForm] = useState({
+    reason: 'Cliente não respondeu',
+    description: '',
+    contactAttempts: 2,
+  });
 
-  const handleCopyPhone = () => {
-    soundEngine.playSfx('click');
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(client.whatsapp).catch(() => {});
+  const [rescheduleForm, setRescheduleForm] = useState({
+    newDate: '',
+    newTime: '',
+    reason: '',
+    notes: '',
+  });
+
+  const [reportForm, setReportForm] = useState({
+    durationMinutes: '',
+    businessDescription: '',
+    productsOrServices: '',
+    targetAudienceAndRegion: '',
+    currentDigitalPresence: '',
+    mainDifficulties: '',
+    clientNeedsAndGoals: '',
+    howSiteHelpsClient: '',
+    domainPlatform: 'Wix',
+    nextCallSitePresentationDate: '',
+    selfEvaluation: '',
+    sellerTestimony: '',
+    saleClosedChoice: '',
+    financialStatus: 'Pagamento pendente',
+    paymentStructure: 'Pagamento imediato',
+    saleValue: '',
+    amountSent: '',
+    paymentMethod: 'PIX',
+    saleNotes: '',
+  });
+
+  useEffect(() => {
+    if (open) {
+      setStep('choose');
     }
-    showToast('info', 'Número copiado', `${formatWhatsAppDisplay(client.whatsapp)} copiado para a área de transferência.`);
+  }, [open, client?.id]);
+
+  if (!open || !client) return null;
+
+  const meeting = db.meetings.find((m) => m.id === client.currentMeetingId);
+  const prevReschedules = db.rescheduleRecords.filter((r) => r.clientId === client.id);
+
+  const handleSaveNoShow = (e) => {
+    e.preventDefault();
+    try {
+      dataEngine.registerNoShow(user, client.id, noShowForm);
+      soundEngine.playSfx('warning');
+      notify('Ocorrência de vácuo registrada no histórico.', 'warning');
+      onClose();
+    } catch (err) {
+      soundEngine.playSfx('error');
+      notify(err.message, 'error');
+    }
   };
 
-  const handleConfirmContact = () => {
-    if (confirming || isContactDone) return;
-    setConfirming(true);
-    onConfirmFirstContact(client.id);
-    setTimeout(() => setConfirming(false), 300);
+  const handleSaveReschedule = (e) => {
+    e.preventDefault();
+    try {
+      dataEngine.rescheduleMeeting(user, client.id, rescheduleForm);
+      soundEngine.playSfx('success');
+      notify('Reunião reagendada com preservação do histórico original!', 'success');
+      onClose();
+    } catch (err) {
+      soundEngine.playSfx('error');
+      notify(err.message, 'error');
+    }
+  };
+
+  const handleSaveReport = (e) => {
+    e.preventDefault();
+    try {
+      dataEngine.submitUnifiedMeetingReport(user, client.id, reportForm);
+      soundEngine.playSfx('success');
+      notify('Registro dos Dados enviado com sucesso ao Pablo!', 'success');
+      onClose();
+    } catch (err) {
+      soundEngine.playSfx('error');
+      notify(err.message, 'error');
+    }
   };
 
   return (
-    <PwCard
-      tokens={tokens}
-      glow={!isContactDone && currentUser.role === 'seller'}
-      className="p-5 flex flex-col justify-between gap-4"
+    <Modal
+      open={open}
+      onClose={onClose}
+      maxWidth="max-w-3xl"
+      title={`Reunião de Vendas • ${client.name}`}
+      subtitle="Utilize esta opção após o horário previsto para a reunião ou quando precisar registrar o resultado do atendimento. Escolha a situação correspondente para manter o histórico atualizado. Ao marcar a reunião como realizada, você deverá preencher o relatório completo. Se o cliente não compareceu ou não respondeu, registre a ocorrência. Caso a reunião tenha sido reagendada, informe a nova data e o novo horário."
     >
-      <div className="flex flex-col gap-3">
-        <div className="flex items-start justify-between gap-2">
-          <div>
-            <button
-              type="button"
-              onClick={() => {
-                soundEngine.playSfx('click');
-                onOpenDossier(client);
-              }}
-              style={{ color: tokens.textPrimary }}
-              className="text-base font-semibold tracking-tight text-left hover:text-[#8017FF] transition-colors flex items-center gap-1.5"
-            >
-              <span>{client.name}</span>
-              <ArrowUpRight className="w-3.5 h-3.5 opacity-65" />
-            </button>
-            <div className="flex items-center gap-1.5 mt-1">
-              <Building2 style={{ color: tokens.textSecondary }} className="w-3.5 h-3.5" />
-              <span style={{ color: tokens.textSecondary }} className="text-xs">
-                {client.segment}
-              </span>
-            </div>
-          </div>
-
-          <div className="flex flex-col items-end gap-1">
-            {client.hasSale && (
-              <PwBadge variant="success" tokens={tokens}>
-                <DollarSign className="w-3 h-3" /> Venda Concluída
-              </PwBadge>
-            )}
-            <PwBadge
-              variant={isMeetingDone ? 'success' : isNoShow ? 'warning' : 'primary'}
-              tokens={tokens}
-            >
-              {isMeetingDone ? 'Reunião Realizada' : isNoShow ? 'Vácuo Registrado' : 'Reunião Agendada'}
-            </PwBadge>
-          </div>
+      {/* Bloco nativo Reunião de vendas: Infos */}
+      <div
+        className="p-4 rounded-xl border grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs"
+        style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border, color: tokens.text }}
+      >
+        <div>
+          <span className="opacity-65 block">Data / Horário</span>
+          <strong className="mt-0.5 block">
+            {meeting ? formatDateWithWeekdayBR(meeting.scheduledDate, meeting.scheduledTime) : 'N/A'}
+          </strong>
         </div>
-
-        {/* Informações de Reunião (com dia da semana) e Responsável */}
-        <div
-          style={{ backgroundColor: tokens.bg, borderColor: tokens.border, borderRadius: 11 }}
-          className="border p-3 flex flex-col gap-2 text-xs"
-        >
-          <div className="flex items-center justify-between gap-2">
-            <span style={{ color: tokens.textSecondary }} className="flex items-center gap-1.5">
-              <Calendar className="w-3.5 h-3.5 text-[#8017FF]" />
-              Reunião de Vendas:
-            </span>
-            <strong style={{ color: tokens.textPrimary }} className="text-right">
-              {formatMeetingSchedule(client.meetingDate, client.meetingTime, true)}
-            </strong>
-          </div>
-
-          <div className="flex items-center justify-between gap-2">
-            <span style={{ color: tokens.textSecondary }} className="flex items-center gap-1.5">
-              <Phone className="w-3.5 h-3.5 text-[#16845B]" />
-              WhatsApp:
-            </span>
-            <div className="flex items-center gap-1.5">
-              <a
-                href={buildWhatsAppLink(client.whatsapp, client.name)}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={() => soundEngine.playSfx('click')}
-                style={{ color: tokens.primary }}
-                className="font-medium hover:underline"
-              >
-                {formatWhatsAppDisplay(client.whatsapp)}
-              </a>
-              <button
-                type="button"
-                onClick={handleCopyPhone}
-                title="Copiar número"
-                style={{ color: tokens.textSecondary }}
-                className="p-1 rounded hover:opacity-80"
-              >
-                <Copy className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-
-          {currentUser.role === 'admin' && (
-            <div className="flex items-center justify-between gap-2">
-              <span style={{ color: tokens.textSecondary }} className="flex items-center gap-1.5">
-                <User className="w-3.5 h-3.5 text-[#8017FF]" />
-                Responsável:
-              </span>
-              <strong style={{ color: tokens.textPrimary }}>{responsibleLabel}</strong>
-            </div>
-          )}
-
-          {client.notes && (
-            <div style={{ borderColor: tokens.border }} className="pt-2 border-t text-[11px]">
-              <span style={{ color: tokens.textSecondary }}>Observações: </span>
-              <span style={{ color: tokens.textPrimary }}>{client.notes}</span>
-            </div>
-          )}
-        </div>
-
-        {/* FLUXO SEQUENCIAL DE PENDÊNCIAS */}
-        {currentUser.role === 'seller' ? (
-          !isContactDone ? (
-            /* 1ª PENDÊNCIA ÚNICA INICIAL: Confirmar envio de mensagem no WhatsApp */
-            <div
-              style={{
-                backgroundColor: 'rgba(183, 121, 31, 0.12)',
-                borderColor: 'rgba(183, 121, 31, 0.38)',
-                borderRadius: 11,
-              }}
-              className="border p-3.5 flex flex-col gap-2.5"
-            >
-              <div className="flex items-start gap-2">
-                <AlertCircle style={{ color: tokens.warning }} className="w-4 h-4 shrink-0 mt-0.5" />
-                <div className="text-xs">
-                  <p style={{ color: tokens.textPrimary }} className="font-semibold">
-                    1ª Pendência: Confirmar mensagem no WhatsApp
-                  </p>
-                  <p style={{ color: tokens.textSecondary }} className="text-[11px] mt-0.5 leading-relaxed">
-                    Envie uma mensagem para lembrar o cliente da call marcada para{' '}
-                    <strong style={{ color: tokens.textPrimary }}>
-                      {formatMeetingSchedule(client.meetingDate, client.meetingTime, true)}
-                    </strong>
-                    .
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <a
-                  href={buildWhatsAppLink(client.whatsapp, client.name)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={() => soundEngine.playSfx('click')}
-                  style={{
-                    backgroundColor: '#16845B',
-                    color: '#FFFFFF',
-                    borderRadius: 10,
-                  }}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium hover:opacity-95 transition-opacity"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  Abrir WhatsApp
-                </a>
-
-                <PwButton
-                  size="xs"
-                  variant="primary"
-                  icon={Check}
-                  disabled={confirming}
-                  onClick={handleConfirmContact}
-                  tokens={tokens}
-                >
-                  Já mandei mensagem
-                </PwButton>
-              </div>
-            </div>
-          ) : !isMeetingDone ? (
-            /* 2ª PENDÊNCIA: Liberada após confirmar WhatsApp — Data/Hora + Botão "Já fiz" + Botão "WhatsApp" */
-            <div
-              style={{
-                backgroundColor: 'rgba(128, 23, 255, 0.12)',
-                borderColor: 'rgba(128, 23, 255, 0.42)',
-                borderRadius: 11,
-              }}
-              className="border p-3.5 flex flex-col gap-2.5"
-            >
-              <div className="flex items-start gap-2">
-                <CalendarClock style={{ color: tokens.primary }} className="w-4 h-4 shrink-0 mt-0.5" />
-                <div className="text-xs">
-                  <p style={{ color: tokens.textPrimary }} className="font-semibold">
-                    2ª Pendência: Realizar Reunião de Vendas
-                  </p>
-                  <p style={{ color: tokens.textSecondary }} className="text-[11px] mt-0.5">
-                    Agendada para:{' '}
-                    <strong style={{ color: tokens.textPrimary }}>
-                      {formatMeetingSchedule(client.meetingDate, client.meetingTime, true)}
-                    </strong>
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <PwButton
-                  size="xs"
-                  variant="primary"
-                  icon={CheckCircle2}
-                  onClick={() => onOpenRVendas(client, 'REPORT')}
-                  tokens={tokens}
-                >
-                  Já fiz
-                </PwButton>
-
-                <a
-                  href={buildWhatsAppLink(client.whatsapp, client.name)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={() => soundEngine.playSfx('click')}
-                  style={{
-                    backgroundColor: '#16845B',
-                    color: '#FFFFFF',
-                    borderRadius: 10,
-                  }}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium hover:opacity-95 transition-opacity"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  WhatsApp
-                </a>
-              </div>
-            </div>
-          ) : (
-            <div
-              style={{
-                backgroundColor: 'rgba(22, 132, 91, 0.12)',
-                borderColor: 'rgba(22, 132, 91, 0.34)',
-                borderRadius: 11,
-              }}
-              className="border p-3 flex items-center justify-between gap-2 text-xs"
-            >
-              <div className="flex items-center gap-2">
-                <CheckCircle2 style={{ color: tokens.success }} className="w-4 h-4 shrink-0" />
-                <span style={{ color: tokens.textPrimary }} className="font-medium">
-                  Reunião realizada e Registro dos Dados salvo
-                </span>
-              </div>
-            </div>
-          )
-        ) : (
-          /* Visão do Administrador: apenas status informativo do contato */
-          <div
-            style={{
-              backgroundColor: isContactDone ? 'rgba(22, 132, 91, 0.12)' : 'rgba(183, 121, 31, 0.12)',
-              borderColor: isContactDone ? 'rgba(22, 132, 91, 0.34)' : 'rgba(183, 121, 31, 0.34)',
-              borderRadius: 11,
-            }}
-            className="border p-3 flex items-center gap-2 text-xs"
-          >
-            {isContactDone ? (
-              <>
-                <CheckCircle2 style={{ color: tokens.success }} className="w-4 h-4 shrink-0" />
-                <span style={{ color: tokens.textPrimary }}>
-                  Primeiro contato feito por <strong>{client.firstContactBy}</strong> em{' '}
-                  {formatSaoPauloDateTime(client.firstContactAt)}
-                </span>
-              </>
+        <div>
+          <span className="opacity-65 block">Status</span>
+          <div className="mt-0.5">
+            {meeting?.status === 'completed' ? (
+              <Badge tone="success">Realizada</Badge>
+            ) : meeting?.status === 'no_show' ? (
+              <Badge tone="error">Vácuo registrado</Badge>
             ) : (
-              <>
-                <Clock style={{ color: tokens.warning }} className="w-4 h-4 shrink-0" />
-                <span style={{ color: tokens.textPrimary }}>
-                  Primeiro contato: <strong>Ainda não realizado pelo vendedor</strong>
-                </span>
-              </>
+              <Badge tone="primary">Agendada</Badge>
             )}
           </div>
-        )}
-      </div>
-
-      {/* Rodapé do Card */}
-      <div style={{ borderColor: tokens.border }} className="pt-3 border-t flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <PwButton
-            size="xs"
-            variant="secondary"
-            icon={FileText}
-            onClick={() => onOpenDossier(client)}
-            tokens={tokens}
-          >
-            Dossiê
-          </PwButton>
-
-          {!isMeetingDone && (
-            <PwButton
-              size="xs"
-              variant="secondary"
-              icon={Briefcase}
-              onClick={() => onOpenRVendas(client, 'SELECT_OUTCOME')}
-              tokens={tokens}
-            >
-              R. Vendas
-            </PwButton>
-          )}
         </div>
-
-        {currentUser.role === 'admin' && (
-          <PwButton
-            size="xs"
-            variant="secondary"
-            icon={ArrowLeftRight}
-            onClick={() => onOpenReassign(client)}
-            tokens={tokens}
-          >
-            Reatribuir
-          </PwButton>
-        )}
+        <div>
+          <span className="opacity-65 block">Reagendamentos anteriores</span>
+          <strong className="mt-0.5 block">
+            {prevReschedules.length === 0
+              ? 'Nenhum reagendamento'
+              : `${prevReschedules.length} reagendamento(s)`}
+          </strong>
+        </div>
       </div>
-    </PwCard>
+
+      {step === 'choose' && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+          <button
+            type="button"
+            onClick={() => {
+              soundEngine.playSfx('click');
+              setStep('completed');
+            }}
+            className="p-4 rounded-xl border text-left transition-all hover:border-[#8017FF]"
+            style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border, color: tokens.text }}
+          >
+            <CheckCircle2 className="w-5 h-5 mb-2" style={{ color: '#2AC78E' }} />
+            <div className="font-semibold text-sm" style={{ color: tokens.text }}>Realizada</div>
+            <p className="text-xs mt-1" style={{ color: tokens.textSecondary }}>
+              Preencher o Registro dos Dados e Registro da Venda.
+            </p>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              soundEngine.playSfx('click');
+              setStep('no_show');
+            }}
+            className="p-4 rounded-xl border text-left transition-all hover:border-[#C83E4D]"
+            style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border, color: tokens.text }}
+          >
+            <XCircle className="w-5 h-5 mb-2" style={{ color: '#F27986' }} />
+            <div className="font-semibold text-sm" style={{ color: tokens.text }}>Vácuo</div>
+            <p className="text-xs mt-1" style={{ color: tokens.textSecondary }}>
+              Cliente não compareceu, não respondeu ou cancelou.
+            </p>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              soundEngine.playSfx('click');
+              setStep('reschedule');
+            }}
+            className="p-4 rounded-xl border text-left transition-all hover:border-[#B7791F]"
+            style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border, color: tokens.text }}
+          >
+            <Calendar className="w-5 h-5 mb-2" style={{ color: '#F2B450' }} />
+            <div className="font-semibold text-sm" style={{ color: tokens.text }}>Reagendamento</div>
+            <p className="text-xs mt-1" style={{ color: tokens.textSecondary }}>
+              Definir nova data e horário mantendo histórico.
+            </p>
+          </button>
+        </div>
+      )}
+
+      {step === 'no_show' && (
+        <form onSubmit={handleSaveNoShow} className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h4 className="text-sm font-semibold" style={{ color: tokens.text }}>Registrar Ocorrência de Vácuo</h4>
+            <Button size="sm" variant="ghost" onClick={() => setStep('choose')}>
+              Voltar às opções
+            </Button>
+          </div>
+          <SelectField
+            label="Motivo"
+            required
+            value={noShowForm.reason}
+            onChange={(e) => setNoShowForm({ ...noShowForm, reason: e.target.value })}
+          >
+            <option value="Cliente não respondeu">Cliente não respondeu</option>
+            <option value="Cliente não compareceu">Cliente não compareceu</option>
+            <option value="Cliente cancelou sem reagendar">Cliente cancelou sem reagendar</option>
+            <option value="Outro motivo">Outro motivo</option>
+          </SelectField>
+          <InputField
+            label="Tentativas de contato realizadas"
+            type="number"
+            min="1"
+            value={noShowForm.contactAttempts}
+            onChange={(e) => setNoShowForm({ ...noShowForm, contactAttempts: e.target.value })}
+          />
+          <TextAreaField
+            label="Descrição do ocorrido"
+            required
+            rows={3}
+            placeholder="Descreva o que houve no horário da reunião..."
+            value={noShowForm.description}
+            onChange={(e) => setNoShowForm({ ...noShowForm, description: e.target.value })}
+          />
+          <div className="flex justify-end gap-3">
+            <Button variant="secondary" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button type="submit" variant="danger">
+              Registrar Vácuo
+            </Button>
+          </div>
+        </form>
+      )}
+
+      {step === 'reschedule' && (
+        <form onSubmit={handleSaveReschedule} className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h4 className="text-sm font-semibold" style={{ color: tokens.text }}>Reagendar Reunião de Vendas</h4>
+            <Button size="sm" variant="ghost" onClick={() => setStep('choose')}>
+              Voltar às opções
+            </Button>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <InputField
+              label="Nova data"
+              type="date"
+              required
+              value={rescheduleForm.newDate}
+              onChange={(e) => setRescheduleForm({ ...rescheduleForm, newDate: e.target.value })}
+            />
+            <InputField
+              label="Novo horário"
+              type="time"
+              required
+              value={rescheduleForm.newTime}
+              onChange={(e) => setRescheduleForm({ ...rescheduleForm, newTime: e.target.value })}
+            />
+          </div>
+          <InputField
+            label="Motivo (opcional)"
+            placeholder="Ex: Imprevisto do cliente, pediu para remarcar..."
+            value={rescheduleForm.reason}
+            onChange={(e) => setRescheduleForm({ ...rescheduleForm, reason: e.target.value })}
+          />
+          <TextAreaField
+            label="Observações (opcional)"
+            rows={2}
+            value={rescheduleForm.notes}
+            onChange={(e) => setRescheduleForm({ ...rescheduleForm, notes: e.target.value })}
+          />
+          <div className="flex justify-end gap-3">
+            <Button variant="secondary" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button type="submit" variant="primary">
+              Confirmar Reagendamento
+            </Button>
+          </div>
+        </form>
+      )}
+
+      {step === 'completed' && (
+        <form onSubmit={handleSaveReport} className="space-y-5">
+          <div className="flex items-center justify-between border-b pb-3" style={{ borderColor: tokens.border }}>
+            <div>
+              <Badge tone="primary">Relatório Único • Qualificação + Oferta</Badge>
+              <h4 className="text-sm font-semibold mt-1" style={{ color: tokens.text }}>Registro dos Dados</h4>
+            </div>
+            <Button size="sm" variant="ghost" onClick={() => setStep('choose')}>
+              Voltar às opções
+            </Button>
+          </div>
+
+          {/* Negócio & Oferta */}
+          <div className="space-y-3">
+            <h5 className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#B87CFF' }}>
+              Negócio & Oferta
+            </h5>
+            <TextAreaField
+              label="Descrição do negócio e produtos/serviços comercializados"
+              rows={2}
+              placeholder="O que a empresa vende e como opera..."
+              value={reportForm.businessDescription}
+              onChange={(e) => setReportForm({ ...reportForm, businessDescription: e.target.value })}
+            />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <InputField
+                label="Público-alvo e região de atuação"
+                placeholder="Ex: Público local em São Paulo..."
+                value={reportForm.targetAudienceAndRegion}
+                onChange={(e) => setReportForm({ ...reportForm, targetAudienceAndRegion: e.target.value })}
+              />
+              <InputField
+                label="Presença digital atual (Site / Instagram)"
+                placeholder="Ex: Só Instagram, sem site..."
+                value={reportForm.currentDigitalPresence}
+                onChange={(e) => setReportForm({ ...reportForm, currentDigitalPresence: e.target.value })}
+              />
+            </div>
+          </div>
+
+          {/* Dificuldades / Necessidades */}
+          <div className="space-y-3">
+            <h5 className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#B87CFF' }}>
+              Dificuldades / Necessidades
+            </h5>
+            <TextAreaField
+              label="Principais dificuldades identificadas"
+              rows={2}
+              placeholder="Problemas na presença digital, perda de clientes, falta de autoridade..."
+              value={reportForm.mainDifficulties}
+              onChange={(e) => setReportForm({ ...reportForm, mainDifficulties: e.target.value })}
+            />
+            <TextAreaField
+              label="Necessidades, objetivos e expectativas com o site"
+              rows={2}
+              placeholder="O que o cliente espera alcançar com o novo site..."
+              value={reportForm.clientNeedsAndGoals}
+              onChange={(e) => setReportForm({ ...reportForm, clientNeedsAndGoals: e.target.value })}
+            />
+          </div>
+
+          {/* Solução & Proposta */}
+          <div className="space-y-3">
+            <h5 className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#B87CFF' }}>
+              Solução & Proposta
+            </h5>
+            <TextAreaField
+              label="Como um site pode ajudar esse cliente em específico (o que precisa ter no site)"
+              rows={3}
+              placeholder="Ex: Um site que apresente os produtos tipo um cardápio digital, um site estilo portfólio, um site de vendas padrão p/ negócio local..."
+              value={reportForm.howSiteHelpsClient}
+              onChange={(e) => setReportForm({ ...reportForm, howSiteHelpsClient: e.target.value })}
+            />
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium mb-1.5" style={{ color: tokens.textSecondary }}>
+                  O domínio é pela assinatura da Wix, ou vai ser gratuito por Vercel?
+                </label>
+                <div className="flex gap-3">
+                  {['Wix', 'Vercel'].map((opt) => (
+                    <label
+                      key={opt}
+                      className="flex-1 flex items-center gap-2 px-3.5 py-2.5 rounded-xl border text-xs font-medium cursor-pointer"
+                      style={{
+                        backgroundColor:
+                          reportForm.domainPlatform === opt ? 'rgba(128, 23, 255, 0.18)' : tokens.surfaceElevated,
+                        borderColor: reportForm.domainPlatform === opt ? tokens.primary : tokens.border,
+                        color: tokens.text,
+                      }}
+                    >
+                      <input
+                        type="radio"
+                        name="domainPlatform"
+                        value={opt}
+                        checked={reportForm.domainPlatform === opt}
+                        onChange={() => setReportForm({ ...reportForm, domainPlatform: opt })}
+                        className="accent-[#8017FF]"
+                      />
+                      <span>{opt}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <InputField
+                label="Qual a data para a próxima call apresentando o site?"
+                type="date"
+                value={reportForm.nextCallSitePresentationDate}
+                onChange={(e) =>
+                  setReportForm({ ...reportForm, nextCallSitePresentationDate: e.target.value })
+                }
+              />
+            </div>
+          </div>
+
+          {/* Autoavaliação e Depoimento */}
+          <div className="space-y-3">
+            <h5 className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#B87CFF' }}>
+              Autoavaliação & Depoimento
+            </h5>
+            <TextAreaField
+              label="Autoavaliação do atendimento (pontos positivos, objeções e melhorias)"
+              rows={2}
+              value={reportForm.selfEvaluation}
+              onChange={(e) => setReportForm({ ...reportForm, selfEvaluation: e.target.value })}
+            />
+            <TextAreaField
+              label="Depoimento completo nas suas palavras sobre todos os pontos da call"
+              rows={4}
+              placeholder="Explique livremente tudo o que aconteceu na reunião..."
+              value={reportForm.sellerTestimony}
+              onChange={(e) => setReportForm({ ...reportForm, sellerTestimony: e.target.value })}
+            />
+          </div>
+
+          {/* Registro da Venda */}
+          <div
+            className="p-4 rounded-xl border space-y-4"
+            style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border, color: tokens.text }}
+          >
+            <SelectField
+              label="Houve fechamento de venda nesta reunião?"
+              required
+              value={reportForm.saleClosedChoice}
+              onChange={(e) => setReportForm({ ...reportForm, saleClosedChoice: e.target.value })}
+            >
+              <option value="">Selecione...</option>
+              <option value="Venda concluída">Venda concluída</option>
+              <option value="Proposta em análise">Proposta em análise</option>
+              <option value="Cliente solicitou retorno">Cliente solicitou retorno</option>
+              <option value="Venda não concluída">Venda não concluída</option>
+            </SelectField>
+
+            {reportForm.saleClosedChoice === 'Venda concluída' && (
+              <div className="space-y-4 pt-2 border-t" style={{ borderColor: tokens.border }}>
+                <h5 className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#2AC78E' }}>
+                  Registro da Venda
+                </h5>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <SelectField
+                    label="Status financeiro"
+                    value={reportForm.financialStatus}
+                    onChange={(e) => setReportForm({ ...reportForm, financialStatus: e.target.value })}
+                  >
+                    <option value="Concluída">Concluída</option>
+                    <option value="Pagamento pendente">Pagamento pendente</option>
+                  </SelectField>
+
+                  <div>
+                    <label className="block text-xs font-medium mb-1.5" style={{ color: tokens.textSecondary }}>
+                      Pagamento imediato ou 50/50?
+                    </label>
+                    <div className="flex gap-2">
+                      {['Pagamento imediato', '50/50'].map((struct) => (
+                        <label
+                          key={struct}
+                          className="flex-1 flex items-center gap-2 px-3 py-2.5 rounded-xl border text-xs font-medium cursor-pointer"
+                          style={{
+                            backgroundColor:
+                              reportForm.paymentStructure === struct
+                                ? 'rgba(128, 23, 255, 0.18)'
+                                : tokens.surface,
+                            borderColor:
+                              reportForm.paymentStructure === struct ? tokens.primary : tokens.border,
+                            color: tokens.text,
+                          }}
+                        >
+                          <input
+                            type="radio"
+                            name="paymentStructure"
+                            value={struct}
+                            checked={reportForm.paymentStructure === struct}
+                            onChange={() => setReportForm({ ...reportForm, paymentStructure: struct })}
+                            className="accent-[#8017FF]"
+                          />
+                          <span>{struct}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <InputField
+                    label="Valor vendido (R$)"
+                    type="number"
+                    step="0.01"
+                    required
+                    placeholder="Ex: 1500.00"
+                    value={reportForm.saleValue}
+                    onChange={(e) => setReportForm({ ...reportForm, saleValue: e.target.value })}
+                  />
+
+                  <InputField
+                    label="Valor enviado / pago agora (R$)"
+                    type="number"
+                    step="0.01"
+                    placeholder="Ex: 750.00"
+                    value={reportForm.amountSent}
+                    onChange={(e) => setReportForm({ ...reportForm, amountSent: e.target.value })}
+                  />
+
+                  <InputField
+                    label="Método de pagamento"
+                    required
+                    placeholder="PIX, Cartão de Crédito, Boleto..."
+                    value={reportForm.paymentMethod}
+                    onChange={(e) => setReportForm({ ...reportForm, paymentMethod: e.target.value })}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="flex justify-end gap-3 pt-2">
+            <Button variant="secondary" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button type="submit" variant="primary">
+              <Send className="w-4 h-4" />
+              <span>Salvar Relatório</span>
+            </Button>
+          </div>
+        </form>
+      )}
+    </Modal>
   );
 }
 
-/**
- * ============================================================================
- * PÁGINA 1: DASHBOARD (VENDEDOR E ADMINISTRADOR)
- * ============================================================================
- */
-function DashboardPage({
-  db,
-  currentUser,
-  onNavigate,
-  onConfirmFirstContact,
-  onOpenReassign,
-  onOpenRVendas,
-  onOpenDossier,
-  onInspectReport,
-  showToast,
-  tokens,
-}) {
-  const [periodFilter, setPeriodFilter] = useState('all');
-  const [sellerFilter, setSellerFilter] = useState('all');
+// ============================================================================
+// 9. MODAL DE DOSSIÊ COMPLETO DO CLIENTE
+// ============================================================================
+function ClientDossierModal({ open, onClose, clientId, onOpenMeetingModal }) {
+  const { db, tokens } = useApp();
+  if (!open || !clientId) return null;
 
-  const todayISO = getTodaySaoPauloISO();
-  const isAdmin = currentUser.role === 'admin';
+  const client = db.clients.find((c) => c.id === clientId);
+  if (!client) return null;
 
-  const matchesPeriod = useCallback(
-    (isoOrDate) => {
-      if (periodFilter === 'all' || !isoOrDate) return true;
-      const dateStr = isoOrDate.slice(0, 10);
-      if (periodFilter === 'today') return dateStr === todayISO;
-      const target = new Date(`${dateStr}T00:00:00Z`).getTime();
-      const now = new Date(`${todayISO}T00:00:00Z`).getTime();
-      const diffDays = Math.floor((now - target) / 86400000);
-      if (periodFilter === '7d') return diffDays >= 0 && diffDays <= 7;
-      if (periodFilter === '30d') return diffDays >= 0 && diffDays <= 30;
-      return true;
-    },
-    [periodFilter, todayISO]
-  );
-
-  const sellersList = useMemo(() => db.users.filter((u) => u.role === 'seller'), [db.users]);
-  const activeSellers = useMemo(() => sellersList.filter((u) => u.status === 'active'), [sellersList]);
-
-  const scopedClients = useMemo(() => {
-    return db.clients.filter((c) => {
-      if (!isAdmin && c.assignedSellerId !== currentUser.id) return false;
-      if (isAdmin && sellerFilter !== 'all' && c.assignedSellerId !== sellerFilter) return false;
-      return matchesPeriod(c.createdAt);
-    });
-  }, [db.clients, isAdmin, currentUser.id, sellerFilter, matchesPeriod]);
-
-  const scopedMeetings = useMemo(() => {
-    return db.meetings.filter((m) => {
-      if (!isAdmin && m.assignedSellerId !== currentUser.id) return false;
-      if (isAdmin && sellerFilter !== 'all' && m.assignedSellerId !== sellerFilter) return false;
-      return matchesPeriod(m.scheduledDate);
-    });
-  }, [db.meetings, isAdmin, currentUser.id, sellerFilter, matchesPeriod]);
-
-  const scopedNoShows = useMemo(() => {
-    return db.noShowOccurrences.filter((o) => {
-      if (!isAdmin && o.sellerId !== currentUser.id) return false;
-      if (isAdmin && sellerFilter !== 'all' && o.sellerId !== sellerFilter) return false;
-      return matchesPeriod(o.createdAt);
-    });
-  }, [db.noShowOccurrences, isAdmin, currentUser.id, sellerFilter, matchesPeriod]);
-
-  const scopedValidSales = useMemo(() => {
-    return db.sales.filter((s) => {
-      if (s.status === 'cancelled' || s.status === 'refunded') return false;
-      if (!isAdmin && s.sellerId !== currentUser.id) return false;
-      if (isAdmin && sellerFilter !== 'all' && s.sellerId !== sellerFilter) return false;
-      return matchesPeriod(s.saleDate || s.createdAt);
-    });
-  }, [db.sales, isAdmin, currentUser.id, sellerFilter, matchesPeriod]);
-
-  const contactsDoneCount = scopedClients.filter((c) => c.firstContactStatus === 'completed').length;
-  const contactsPendingCount = scopedClients.filter((c) => c.firstContactStatus === 'pending').length;
-  const meetingsCompletedCount = scopedMeetings.filter((m) => m.status === 'completed').length;
-  const futureMeetingsCount = scopedMeetings.filter(
-    (m) => m.status === 'scheduled' && m.scheduledDate >= todayISO
-  ).length;
-  const overdueOrPendingReportCount = scopedMeetings.filter(
-    (m) => m.status === 'scheduled' && m.scheduledDate < todayISO
-  ).length;
-
-  const salesCount = scopedValidSales.length;
-  const totalSoldValue = scopedValidSales.reduce((acc, s) => acc + (Number(s.value) || 0), 0);
-  const totalReceivedValue = scopedValidSales.reduce((acc, s) => acc + (Number(s.receivedValue) || 0), 0);
-
-  // Vendas totais do vendedor (base histórica para comissão e metas)
-  const sellerAllValidSales = useMemo(() => {
-    const targetId = isAdmin && sellerFilter !== 'all' ? sellerFilter : currentUser.id;
-    return db.sales.filter(
-      (s) => s.sellerId === targetId && s.status !== 'cancelled' && s.status !== 'refunded'
-    );
-  }, [db.sales, isAdmin, sellerFilter, currentUser.id]);
-
-  const sellerAllSoldTotal = sellerAllValidSales.reduce((acc, s) => acc + (Number(s.value) || 0), 0);
-
-  const unreadReportsCount = useMemo(() => {
-    return [
-      ...db.meetingReports.filter((r) => !r.isReadByAdmin),
-      ...db.noShowOccurrences.filter((o) => !o.isReadByAdmin),
-      ...db.rescheduleRecords.filter((r) => !r.isReadByAdmin),
-    ].length;
-  }, [db.meetingReports, db.noShowOccurrences, db.rescheduleRecords]);
-
-  // Funil Comercial
-  const funnelSteps = [
-    {
-      label: 'Clientes Atribuídos',
-      value: scopedClients.length,
-      pct: 100,
-      color: '#8017FF',
-    },
-    {
-      label: 'Contatos Realizados',
-      value: contactsDoneCount,
-      pct: scopedClients.length ? Math.round((contactsDoneCount / scopedClients.length) * 100) : 0,
-      color: '#6B21A8',
-    },
-    {
-      label: 'Reuniões de Vendas Realizadas',
-      value: meetingsCompletedCount,
-      pct: scopedClients.length ? Math.round((meetingsCompletedCount / scopedClients.length) * 100) : 0,
-      color: '#B7791F',
-    },
-    {
-      label: 'Vendas Concluídas',
-      value: salesCount,
-      pct: scopedClients.length ? Math.round((salesCount / scopedClients.length) * 100) : 0,
-      color: '#16845B',
-    },
-  ];
-
-  // Desempenho por Vendedor (Visão Admin)
-  const sellerPerformanceRows = useMemo(() => {
-    return sellersList.map((seller) => {
-      const sClients = db.clients.filter((c) => c.assignedSellerId === seller.id && matchesPeriod(c.createdAt));
-      const sContacts = sClients.filter((c) => c.firstContactStatus === 'completed').length;
-      const sMeetingsDone = db.meetings.filter(
-        (m) => m.assignedSellerId === seller.id && m.status === 'completed' && matchesPeriod(m.scheduledDate)
-      ).length;
-      const sTrueNoShows = db.noShowOccurrences.filter(
-        (o) =>
-          o.sellerId === seller.id &&
-          o.reason === 'Cliente não compareceu' &&
-          matchesPeriod(o.createdAt)
-      ).length;
-      const attendanceDenom = sMeetingsDone + sTrueNoShows;
-      const attendanceRate = attendanceDenom > 0 ? Math.round((sMeetingsDone / attendanceDenom) * 100) : null;
-
-      const sSales = db.sales.filter(
-        (s) =>
-          s.sellerId === seller.id &&
-          s.status !== 'cancelled' &&
-          s.status !== 'refunded' &&
-          matchesPeriod(s.saleDate || s.createdAt)
-      );
-      const sSoldTotal = sSales.reduce((acc, s) => acc + (Number(s.value) || 0), 0);
-
-      return {
-        seller,
-        clientsCount: sClients.length,
-        contactsCount: sContacts,
-        meetingsDoneCount: sMeetingsDone,
-        attendanceRate,
-        salesCount: sSales.length,
-        soldTotal: sSoldTotal,
-      };
-    });
-  }, [sellersList, db.clients, db.meetings, db.noShowOccurrences, db.sales, matchesPeriod]);
-
-  // Fila "Minhas Próximas Ações" (Vendedor — sequencial)
-  const sellerNextActions = useMemo(() => {
-    if (isAdmin) return [];
-    const actions = [];
-    const myClients = db.clients.filter((c) => c.assignedSellerId === currentUser.id);
-
-    myClients
-      .filter((c) => c.firstContactStatus === 'pending')
-      .forEach((c) => {
-        actions.push({
-          id: `contact-${c.id}`,
-          priority: 1,
-          badge: '1ª Pendência',
-          variant: 'warning',
-          title: `Confirmar WhatsApp: ${c.name} (${c.segment})`,
-          subtitle: `Lembrar call marcada para ${formatMeetingSchedule(c.meetingDate, c.meetingTime, true)}.`,
-          client: c,
-        });
-      });
-
-    myClients
-      .filter((c) => c.firstContactStatus === 'completed' && c.meetingStatus === 'scheduled')
-      .sort((a, b) => `${a.meetingDate} ${a.meetingTime}`.localeCompare(`${b.meetingDate} ${b.meetingTime}`))
-      .forEach((c) => {
-        const isOverdue = c.meetingDate < todayISO;
-        actions.push({
-          id: `meeting-${c.id}`,
-          priority: isOverdue ? 2 : 3,
-          badge: isOverdue ? '2ª Pendência (Atrasada)' : '2ª Pendência',
-          variant: isOverdue ? 'error' : 'primary',
-          title: `Reunião de Vendas: ${c.name}`,
-          subtitle: `${formatMeetingSchedule(c.meetingDate, c.meetingTime, true)}`,
-          client: c,
-        });
-      });
-
-    return actions.sort((a, b) => a.priority - b.priority).slice(0, 6);
-  }, [isAdmin, db.clients, currentUser.id, todayISO]);
-
-  // Atividades Recentes (Admin)
-  const recentActivities = useMemo(() => {
-    const events = [];
-    db.clients.forEach((c) => {
-      if (sellerFilter !== 'all' && c.assignedSellerId !== sellerFilter) return;
-      (c.history || []).forEach((h) => {
-        if (!matchesPeriod(h.timestamp)) return;
-        events.push({
-          id: h.id,
-          actor: h.actorName,
-          clientName: c.name,
-          clientObj: c,
-          title: h.title,
-          description: h.description,
-          timestamp: h.timestamp,
-        });
-      });
-    });
-    return events.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 12);
-  }, [db.clients, sellerFilter, matchesPeriod]);
-
-  const sellerKpis = [
-    {
-      label: 'Clientes Atribuídos',
-      value: scopedClients.length,
-      icon: Users,
-      accent: tokens.primary,
-      onClick: () => onNavigate('clients', { status: 'all' }),
-    },
-    {
-      label: 'Contatos Pendentes',
-      value: contactsPendingCount,
-      icon: Clock,
-      accent: tokens.warning,
-      onClick: () => onNavigate('clients', { status: 'pending_contact' }),
-    },
-    {
-      label: 'Contatos Realizados',
-      value: contactsDoneCount,
-      icon: CheckCircle2,
-      accent: tokens.success,
-      onClick: () => onNavigate('clients', { status: 'contact_done' }),
-    },
-    {
-      label: 'Reuniões Realizadas',
-      value: meetingsCompletedCount,
-      icon: Briefcase,
-      accent: tokens.primary,
-      onClick: () => onNavigate('clients', { status: 'meeting_done' }),
-    },
-    {
-      label: 'Vendas Concluídas',
-      value: salesCount,
-      icon: Award,
-      accent: tokens.success,
-      onClick: () => onNavigate('sales'),
-    },
-    {
-      label: 'Valor Vendido',
-      value: formatCurrencyBRL(totalSoldValue),
-      icon: DollarSign,
-      accent: tokens.success,
-      onClick: () => onNavigate('sales'),
-    },
-    {
-      label: 'Reuniões Futuras',
-      value: futureMeetingsCount,
-      icon: Calendar,
-      accent: tokens.primary,
-      onClick: () => onNavigate('clients', { status: 'future_meeting' }),
-    },
-    {
-      label: 'Reuniões sem Relatório',
-      value: overdueOrPendingReportCount,
-      icon: AlertTriangle,
-      accent: tokens.error,
-      onClick: () => onNavigate('clients', { status: 'overdue_meeting' }),
-    },
-  ];
-
-  const adminKpis = [
-    {
-      label: 'Vendedores Ativos',
-      value: activeSellers.length,
-      icon: Users,
-      accent: tokens.primary,
-      onClick: () => onNavigate('users'),
-    },
-    {
-      label: 'Clientes Cadastrados',
-      value: scopedClients.length,
-      icon: Building2,
-      accent: tokens.primary,
-      onClick: () => onNavigate('clients', { status: 'all' }),
-    },
-    {
-      label: 'Contatos Realizados',
-      value: contactsDoneCount,
-      icon: CheckCircle2,
-      accent: tokens.success,
-      onClick: () => onNavigate('clients', { status: 'contact_done' }),
-    },
-    {
-      label: 'Reuniões Realizadas',
-      value: meetingsCompletedCount,
-      icon: Briefcase,
-      accent: tokens.primary,
-      onClick: () => onNavigate('clients', { status: 'meeting_done' }),
-    },
-    {
-      label: 'Vendas Concluídas',
-      value: salesCount,
-      icon: Award,
-      accent: tokens.success,
-      onClick: () => onNavigate('sales'),
-    },
-    {
-      label: 'Valor Vendido',
-      value: formatCurrencyBRL(totalSoldValue),
-      icon: DollarSign,
-      accent: tokens.success,
-      onClick: () => onNavigate('sales'),
-    },
-    {
-      label: 'Valor Recebido',
-      value: formatCurrencyBRL(totalReceivedValue),
-      icon: Wallet,
-      accent: tokens.success,
-      onClick: () => onNavigate('sales'),
-    },
-    {
-      label: 'Contatos Pendentes',
-      value: contactsPendingCount,
-      icon: Clock,
-      accent: tokens.warning,
-      onClick: () => onNavigate('clients', { status: 'pending_contact' }),
-    },
-    {
-      label: 'Reuniões Próximas',
-      value: futureMeetingsCount,
-      icon: Calendar,
-      accent: tokens.primary,
-      onClick: () => onNavigate('clients', { status: 'future_meeting' }),
-    },
-    {
-      label: 'Atrasadas / Sem Relatório',
-      value: overdueOrPendingReportCount,
-      icon: AlertTriangle,
-      accent: tokens.error,
-      onClick: () => onNavigate('clients', { status: 'overdue_meeting' }),
-    },
-    {
-      label: 'Relatórios Não Lidos',
-      value: unreadReportsCount,
-      icon: FileSpreadsheet,
-      accent: tokens.warning,
-      onClick: () => onNavigate('reports'),
-    },
-  ];
-
-  const kpisToRender = isAdmin ? adminKpis : sellerKpis;
+  const meeting = db.meetings.find((m) => m.id === client.currentMeetingId);
+  const reports = db.meetingReports.filter((r) => r.clientId === client.id);
+  const timeline = db.timeline.filter((t) => t.clientId === client.id);
+  const sale = db.sales.find((s) => s.clientId === client.id);
 
   return (
-    <div className="flex flex-col gap-6">
-      {/* Barra de Contexto e Filtros */}
-      <PwCard tokens={tokens} className="p-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-xs">
-          <Filter style={{ color: tokens.primary }} className="w-4 h-4" />
-          <span style={{ color: tokens.textPrimary }} className="font-semibold">
-            Escopo dos Indicadores:
-          </span>
-          <PwBadge variant="primary" tokens={tokens}>
-            {periodFilter === 'all'
-              ? 'Histórico Completo'
-              : periodFilter === 'today'
-              ? 'Hoje (America/Sao_Paulo)'
-              : periodFilter === '7d'
-              ? 'Últimos 7 dias'
-              : 'Últimos 30 dias'}
-          </PwBadge>
+    <Modal
+      open={open}
+      onClose={onClose}
+      maxWidth="max-w-3xl"
+      title={`Dossiê do Cliente • ${client.name}`}
+      subtitle={`Segmento: ${client.segment} • WhatsApp: ${client.whatsapp}`}
+    >
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+        <div className="p-3.5 rounded-xl border" style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border }}>
+          <span className="opacity-65 block">Responsável</span>
+          <strong>{getUserDisplayName(db.users, client.assignedSellerId)}</strong>
+        </div>
+        <div className="p-3.5 rounded-xl border" style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border }}>
+          <span className="opacity-65 block">1º Contato</span>
+          <strong>{client.firstContactStatus === 'done' ? 'Realizado' : 'Pendente'}</strong>
+        </div>
+        <div className="p-3.5 rounded-xl border" style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border }}>
+          <span className="opacity-65 block">Reunião Vigente</span>
+          <strong>
+            {meeting ? formatDateWithWeekdayBR(meeting.scheduledDate, meeting.scheduledTime) : 'N/A'}
+          </strong>
+        </div>
+      </div>
+
+      {sale && (
+        <div className="p-4 rounded-xl border text-xs space-y-1" style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border }}>
+          <div className="flex items-center justify-between">
+            <strong>Registro da Venda</strong>
+            <Badge tone="primary">{sale.financialStatus}</Badge>
+          </div>
+          <p>
+            Vendido: <strong>{formatCurrencyBRL(sale.amountSold)}</strong> • Recebido:{' '}
+            <strong>{formatCurrencyBRL(sale.amountReceived)}</strong> • Modalidade: {sale.paymentStructure} ({sale.paymentMethod})
+          </p>
+        </div>
+      )}
+
+      {reports.length > 0 && (
+        <div className="space-y-2">
+          <h4 className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#B87CFF' }}>
+            Registro dos Dados Enviado
+          </h4>
+          {reports.map((rep) => (
+            <div
+              key={rep.id}
+              className="p-4 rounded-xl border text-xs space-y-2"
+              style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border }}
+            >
+              <p><strong>Negócio:</strong> {rep.businessDescription}</p>
+              <p><strong>Dificuldades:</strong> {rep.mainDifficulties}</p>
+              <p><strong>Como o site vai ajudar:</strong> {rep.howSiteHelpsClient}</p>
+              <p>
+                <strong>Domínio:</strong> {rep.domainPlatform} •{' '}
+                <strong>Próxima call apresentando o site:</strong> {rep.nextCallSitePresentationDate}
+              </p>
+              <p><strong>Autoavaliação:</strong> {rep.selfEvaluation}</p>
+              <p><strong>Depoimento do vendedor:</strong> {rep.sellerTestimony}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="space-y-2">
+        <h4 className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#B87CFF' }}>
+          Linha do Tempo Cronológica
+        </h4>
+        <div className="space-y-2 max-h-60 overflow-y-auto">
+          {timeline.map((item) => (
+            <div
+              key={item.id}
+              className="p-3 rounded-xl border text-xs"
+              style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border }}
+            >
+              <div className="flex justify-between font-medium">
+                <span>{item.title}</span>
+                <span className="opacity-60">{formatDateTimeBR(item.createdAt)}</span>
+              </div>
+              <p className="opacity-75 mt-1">{item.description}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex justify-end gap-2">
+        <Button
+          variant="primary"
+          size="sm"
+          onClick={() => {
+            onClose();
+            onOpenMeetingModal(client);
+          }}
+        >
+          Abrir R. Vendas
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
+// ============================================================================
+// 10. DASHBOARD DO SDR (CADASTRO SEM VENDEDOR + VENDAS WIX US$ 50)
+// ============================================================================
+function SdrDashboardPage() {
+  const { user, db, tokens, notify } = useApp();
+  const [form, setForm] = useState({
+    name: '',
+    segment: '',
+    whatsapp: '',
+    meetingDate: '',
+    meetingTime: '',
+    notes: '',
+  });
+
+  const mySubmissions = db.sdrSubmissions.filter((s) => s.submittedById === user.id);
+
+  // Vendas confirmadas pelo Pablo via botão verde ("Confirmar venda" / confirmed_sdr)
+  const confirmedSdrSales = db.sales.filter((s) => s.pabloValidationStatus === 'confirmed_sdr');
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    try {
+      dataEngine.submitLeadFromSdr(user, form);
+      soundEngine.playSfx('success');
+      notify('Dados enviados ao Pablo com sucesso!', 'success');
+      setForm({ name: '', segment: '', whatsapp: '', meetingDate: '', meetingTime: '', notes: '' });
+    } catch (err) {
+      soundEngine.playSfx('error');
+      notify(err.message, 'error');
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <Card className="p-5">
+          <span className="text-xs opacity-65">Leads Enviados ao Pablo</span>
+          <div className="text-2xl font-bold mt-1">{mySubmissions.length}</div>
+        </Card>
+        <Card className="p-5">
+          <span className="text-xs opacity-65">Aguardando Revisão do Pablo</span>
+          <div className="text-2xl font-bold mt-1" style={{ color: '#F2B450' }}>
+            {mySubmissions.filter((s) => s.status === 'pending_pablo').length}
+          </div>
+        </Card>
+        <Card className="p-5" glow>
+          <span className="text-xs opacity-65">Vendas Realizadas (Wix)</span>
+          <div className="text-2xl font-bold mt-1" style={{ color: '#2AC78E' }}>
+            {confirmedSdrSales.length}
+          </div>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Formulário de envio ao Pablo (sem seleção de vendedor) */}
+        <Card className="p-6">
+          <h2 className="text-base font-semibold mb-1">Cadastrar Novo Cliente para o Pablo</h2>
+          <p className="text-xs opacity-70 mb-4">
+            Preencha os dados do cliente. O Pablo revisará as informações e fará a distribuição ao vendedor.
+          </p>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <InputField
+                label="Nome do cliente"
+                required
+                placeholder="Ex: Maria, Gabriel..."
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+              />
+              <InputField
+                label="Segmento da empresa"
+                required
+                placeholder="Ex: Clínica, Advocacia, Imobiliária..."
+                value={form.segment}
+                onChange={(e) => setForm({ ...form, segment: e.target.value })}
+              />
+              <InputField
+                label="WhatsApp com código do país"
+                required
+                placeholder="+55 11 99999-9999"
+                value={form.whatsapp}
+                onChange={(e) => setForm({ ...form, whatsapp: e.target.value })}
+              />
+              <InputField
+                label="Data da reunião de vendas"
+                type="date"
+                required
+                value={form.meetingDate}
+                onChange={(e) => setForm({ ...form, meetingDate: e.target.value })}
+              />
+              <InputField
+                label="Horário da reunião"
+                type="time"
+                required
+                value={form.meetingTime}
+                onChange={(e) => setForm({ ...form, meetingTime: e.target.value })}
+              />
+            </div>
+
+            <TextAreaField
+              label="Observações (opcional)"
+              rows={3}
+              placeholder="Informações relevantes levantadas na prospecção..."
+              value={form.notes}
+              onChange={(e) => setForm({ ...form, notes: e.target.value })}
+            />
+
+            <Button type="submit" variant="primary" size="lg" className="w-full">
+              <Send className="w-4 h-4" />
+              <span>Enviar ao Pablo</span>
+            </Button>
+          </form>
+        </Card>
+
+        {/* Mural de Vendas Realizadas (sem valor real, exibindo US$ 50 Wix) */}
+        <Card className="p-6 space-y-4">
+          <div>
+            <h2 className="text-base font-semibold">Vendas Realizadas</h2>
+            <p className="text-xs opacity-70">
+              Registro de fechamentos confirmados pelo Pablo com comissão Wix.
+            </p>
+          </div>
+
+          {confirmedSdrSales.length === 0 ? (
+            <EmptyState
+              icon={Award}
+              title="Nenhuma venda confirmada ainda"
+              description="Assim que uma venda for concluída e confirmada pelo Pablo, ela aparecerá aqui."
+            />
+          ) : (
+            <div className="space-y-3 max-h-[420px] overflow-y-auto">
+              {confirmedSdrSales.map((sale) => {
+                const client = db.clients.find((c) => c.id === sale.clientId);
+                return (
+                  <div
+                    key={sale.id}
+                    className="p-4 rounded-xl border flex items-center justify-between gap-3"
+                    style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border }}
+                  >
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <Badge tone="success">Venda Realizada</Badge>
+                        <span className="text-xs opacity-65">{formatDateTimeBR(sale.pabloValidatedAt || sale.saleDate)}</span>
+                      </div>
+                      <div className="font-semibold text-sm mt-1">{client?.name || 'Cliente PontoWeb'}</div>
+                      <div className="text-xs opacity-70">{client?.segment || 'Website Institucional'}</div>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[11px] opacity-65 block">Valor da Venda (Wix)</span>
+                      <strong className="text-base font-bold" style={{ color: '#2AC78E' }}>
+                        US$ 50,00
+                      </strong>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// 11. DASHBOARD DO VENDEDOR (CONTAGEM DE VENDAS + PENDÊNCIAS SEQUENCIAIS)
+// ============================================================================
+function SellerDashboardPage({ onOpenMeetingModal, onOpenDossier }) {
+  const { user, db, tokens, notify } = useApp();
+  const [copiedId, setCopiedId] = useState(null);
+
+  const myClients = db.clients.filter((c) => c.assignedSellerId === user.id);
+  const myMeetings = db.meetings.filter((m) => m.sellerId === user.id);
+
+  // Apenas vendas válidas confirmadas pelo Pablo contabilizam para o vendedor
+  const myValidSales = db.sales.filter(
+    (s) =>
+      s.sellerId === user.id &&
+      (s.pabloValidationStatus === 'confirmed_sdr' || s.pabloValidationStatus === 'confirmed_vercel') &&
+      s.financialStatus !== 'Cancelada' &&
+      s.financialStatus !== 'Reembolsada'
+  );
+
+  const salesCount = myValidSales.length;
+  const totalSold = myValidSales.reduce((acc, s) => acc + (Number(s.amountSold) || 0), 0);
+
+  // Cálculo da faixa de comissão (até 5 = 30%, 6-7 = 35%, 8 = 40%, 9 = 45%, >=10 = 50%)
+  let commissionPct = 30;
+  if (salesCount >= 10) commissionPct = 50;
+  else if (salesCount === 9) commissionPct = 45;
+  else if (salesCount === 8) commissionPct = 40;
+  else if (salesCount >= 6) commissionPct = 35;
+
+  // Meta Mínima = 4 vendas | Meta Máxima = +7 vendas (a partir de 8 vendas)
+  const MIN_GOAL = 4;
+  const MAX_GOAL = 8;
+  let goalText = '';
+  if (salesCount < MIN_GOAL) {
+    const missing = MIN_GOAL - salesCount;
+    goalText = `Faltam ${missing} ${missing === 1 ? 'venda' : 'vendas'} para atingir a Meta Mínima`;
+  } else if (salesCount < MAX_GOAL) {
+    const missing = MAX_GOAL - salesCount;
+    goalText = `Faltam ${missing} ${missing === 1 ? 'venda' : 'vendas'} para atingir a Meta Máxima`;
+  } else {
+    goalText = 'Meta Máxima atingida! Comissão escalonada ativa.';
+  }
+
+  const contactsPending = myClients.filter((c) => c.firstContactStatus === 'pending').length;
+  const contactsDone = myClients.filter((c) => c.firstContactStatus === 'done').length;
+  const upcomingMeetings = myMeetings.filter((m) => m.status === 'scheduled').length;
+  const completedMeetings = myMeetings.filter((m) => m.status === 'completed').length;
+
+  const handleConfirmFirstContact = (clientId) => {
+    try {
+      dataEngine.confirmFirstContact(user, clientId);
+      soundEngine.playSfx('success');
+      notify('Primeiro contato confirmado! A pendência da reunião foi liberada.', 'success');
+    } catch (err) {
+      soundEngine.playSfx('error');
+      notify(err.message, 'error');
+    }
+  };
+
+  const handleCopyPhone = (clientId, phone) => {
+    navigator.clipboard?.writeText(phone).catch(() => {});
+    soundEngine.playSfx('click');
+    setCopiedId(clientId);
+    notify('Número copiado para a área de transferência.', 'neutral');
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* KPIs do Vendedor */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <Card className="p-4">
+          <span className="text-xs opacity-65">Clientes Atribuídos</span>
+          <div className="text-2xl font-bold mt-1">{myClients.length}</div>
+        </Card>
+        <Card className="p-4">
+          <span className="text-xs opacity-65">Contatos Pendentes / Feitos</span>
+          <div className="text-xl font-bold mt-1">
+            <span style={{ color: '#F2B450' }}>{contactsPending}</span> /{' '}
+            <span style={{ color: '#2AC78E' }}>{contactsDone}</span>
+          </div>
+        </Card>
+        <Card className="p-4">
+          <span className="text-xs opacity-65">Próximas Calls / Realizadas</span>
+          <div className="text-xl font-bold mt-1">
+            {upcomingMeetings} / {completedMeetings}
+          </div>
+        </Card>
+        <Card className="p-4">
+          <span className="text-xs opacity-65">Volume Vendido Confirmado</span>
+          <div className="text-xl font-bold mt-1" style={{ color: '#B87CFF' }}>
+            {formatCurrencyBRL(totalSold)}
+          </div>
+        </Card>
+      </div>
+
+      {/* Card Contagem de Vendas & Faixa de Comissão (sem gráfico de linhas e sem emoji) */}
+      <Card glow className="p-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h2 className="text-base font-semibold">Contagem de Vendas</h2>
+            <p className="text-xs opacity-70 mt-0.5">{goalText}</p>
+          </div>
+          <div
+            className="px-3.5 py-2 rounded-xl border text-right"
+            style={{ backgroundColor: 'rgba(128, 23, 255, 0.16)', borderColor: 'rgba(128, 23, 255, 0.4)' }}
+          >
+            <span className="text-[10px] uppercase tracking-wider opacity-75 block">Sua Comissão Atual</span>
+            <strong className="text-xl font-bold" style={{ color: '#D7B8FF' }}>
+              {commissionPct}%
+            </strong>
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          {isAdmin && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5 pt-4 border-t text-xs" style={{ borderColor: tokens.border }}>
+          <div className="p-3 rounded-xl border" style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border }}>
+            <span className="opacity-65 block">Vendas Confirmadas</span>
+            <strong className="text-lg font-bold mt-0.5 block">{salesCount}</strong>
+          </div>
+          <div className="p-3 rounded-xl border" style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border }}>
+            <span className="opacity-65 block">Meta Mínima</span>
+            <strong className="text-sm font-semibold mt-1 block">4 vendas</strong>
+          </div>
+          <div className="p-3 rounded-xl border" style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border }}>
+            <span className="opacity-65 block">Meta Máxima</span>
+            <strong className="text-sm font-semibold mt-1 block">+7 vendas (8+)</strong>
+          </div>
+          <div className="p-3 rounded-xl border" style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border }}>
+            <span className="opacity-65 block">Ganho Estimado ({commissionPct}%)</span>
+            <strong className="text-sm font-bold mt-1 block" style={{ color: '#2AC78E' }}>
+              {formatCurrencyBRL((totalSold * commissionPct) / 100)}
+            </strong>
+          </div>
+        </div>
+      </Card>
+
+      {/* Carteira de Clientes e Fluxo Sequencial de Pendências */}
+      <div className="space-y-4">
+        <div>
+          <h2 className="text-base font-semibold">Meus Clientes & Próximas Ações</h2>
+          <p className="text-xs opacity-70">
+            Confirme primeiro a mensagem no WhatsApp para liberar o registro da reunião de vendas.
+          </p>
+        </div>
+
+        {myClients.length === 0 ? (
+          <EmptyState
+            icon={Users}
+            title="Nenhum cliente atribuído ainda"
+            description="Assim que o Pablo distribuir um cliente para você, ele aparecerá aqui em tempo real."
+          />
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {myClients.map((client) => {
+              const mtg = db.meetings.find((m) => m.id === client.currentMeetingId);
+              const cleanWa = sanitizePhoneForWhatsApp(client.whatsapp);
+              const waUrl = `https://wa.me/${cleanWa}`;
+              const isContactPending = client.firstContactStatus === 'pending';
+
+              return (
+                <Card key={client.id} className="p-5 flex flex-col justify-between space-y-4" glow={isContactPending}>
+                  <div className="space-y-2.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <button
+                          type="button"
+                          onClick={() => onOpenDossier(client.id)}
+                          className="text-base font-semibold hover:underline text-left"
+                        >
+                          {client.name}
+                        </button>
+                        <p className="text-xs opacity-70">{client.segment}</p>
+                      </div>
+                      {mtg?.status === 'completed' ? (
+                        <Badge tone="success">Reunião Realizada</Badge>
+                      ) : mtg?.status === 'no_show' ? (
+                        <Badge tone="error">Vácuo</Badge>
+                      ) : (
+                        <Badge tone="primary">Call Agendada</Badge>
+                      )}
+                    </div>
+
+                    <div className="text-xs space-y-1.5">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="opacity-70">WhatsApp:</span>
+                        <a
+                          href={waUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="font-medium underline"
+                          style={{ color: '#2AC78E' }}
+                        >
+                          {client.whatsapp}
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => handleCopyPhone(client.id, client.whatsapp)}
+                          className="p-1 rounded-md border opacity-75 hover:opacity-100"
+                          style={{ borderColor: tokens.border }}
+                          title="Copiar número"
+                        >
+                          {copiedId === client.id ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                        </button>
+                      </div>
+
+                      <div>
+                        <span className="opacity-70">Call marcada para: </span>
+                        <strong>
+                          {mtg ? formatDateWithWeekdayBR(mtg.scheduledDate, mtg.scheduledTime) : 'Não agendada'}
+                        </strong>
+                      </div>
+
+                      {client.notes && (
+                        <p className="opacity-70 italic text-[11px]">Obs.: "{client.notes}"</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Pendência 1: Confirmar 1º Contato no WhatsApp */}
+                  {isContactPending ? (
+                    <div
+                      className="p-3.5 rounded-xl border space-y-3"
+                      style={{ backgroundColor: 'rgba(183, 121, 31, 0.12)', borderColor: 'rgba(183, 121, 31, 0.38)' }}
+                    >
+                      <p className="text-xs font-medium" style={{ color: '#F2B450' }}>
+                        Pendente: entre em contato com este cliente no WhatsApp, apresente-se e lembre-o da call ({mtg ? formatDateWithWeekdayBR(mtg.scheduledDate, mtg.scheduledTime) : ''}).
+                      </p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <a
+                          href={waUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={() => soundEngine.playSfx('click')}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border"
+                          style={{
+                            backgroundColor: 'rgba(22, 132, 91, 0.18)',
+                            borderColor: 'rgba(22, 132, 91, 0.45)',
+                            color: '#2AC78E',
+                          }}
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          <span>Abrir WhatsApp</span>
+                        </a>
+                        <Button size="sm" variant="primary" onClick={() => handleConfirmFirstContact(client.id)}>
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>Já entrei em contato</span>
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    /* Pendência 2: Reunião de Vendas liberada após confirmação do contato */
+                    <div
+                      className="p-3.5 rounded-xl border space-y-3"
+                      style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border }}
+                    >
+                      <div className="text-xs">
+                        <span className="opacity-70 block">2ª Pendência • Reunião de Vendas:</span>
+                        <strong>
+                          {mtg ? formatDateWithWeekdayBR(mtg.scheduledDate, mtg.scheduledTime) : 'Sem data'}
+                        </strong>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button size="sm" variant="primary" onClick={() => onOpenMeetingModal(client)}>
+                          Já fiz
+                        </Button>
+                        <a
+                          href={waUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={() => soundEngine.playSfx('click')}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border"
+                          style={{
+                            backgroundColor: 'rgba(22, 132, 91, 0.18)',
+                            borderColor: 'rgba(22, 132, 91, 0.45)',
+                            color: '#2AC78E',
+                          }}
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          <span>WhatsApp</span>
+                        </a>
+                        <Button size="sm" variant="secondary" onClick={() => onOpenDossier(client.id)}>
+                          Dossiê
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// 12. DASHBOARD DO PABLO (GESTÃO GERAL, REVISÃO SDR & VALIDAÇÃO DE VENDAS)
+// ============================================================================
+function PabloDashboardPage({ onNavigate, onOpenDossier }) {
+  const { user, db, tokens, notify } = useApp();
+  const [reviewSubmission, setReviewSubmission] = useState(null);
+  const [editForm, setEditForm] = useState({
+    name: '',
+    segment: '',
+    whatsapp: '',
+    meetingDate: '',
+    meetingTime: '',
+    sellerId: '',
+    notes: '',
+  });
+
+  const activeSellers = db.users.filter((u) => u.role === 'seller' && u.active && !u.deleted);
+  const pendingSdrLeads = db.sdrSubmissions.filter((s) => s.status === 'pending_pablo');
+
+  // Vendas relatadas pelos vendedores aguardando os 3 botões de decisão do Pablo
+  const pendingSalesValidation = db.sales.filter((s) => s.pabloValidationStatus === 'pending_pablo');
+
+  // Vendas válidas no dashboard do Pablo (somente após confirmação do Pablo: confirmed_sdr ou confirmed_vercel)
+  const validSales = db.sales.filter(
+    (s) =>
+      (s.pabloValidationStatus === 'confirmed_sdr' || s.pabloValidationStatus === 'confirmed_vercel') &&
+      s.financialStatus !== 'Cancelada' &&
+      s.financialStatus !== 'Reembolsada'
+  );
+
+  const totalSold = validSales.reduce((acc, s) => acc + (Number(s.amountSold) || 0), 0);
+  const totalReceived = validSales.reduce((acc, s) => acc + (Number(s.amountReceived) || 0), 0);
+
+  const contactsDone = db.clients.filter((c) => c.firstContactStatus === 'done').length;
+  const contactsPending = db.clients.filter((c) => c.firstContactStatus === 'pending').length;
+  const completedMeetings = db.meetings.filter((m) => m.status === 'completed').length;
+  const upcomingMeetings = db.meetings.filter((m) => m.status === 'scheduled').length;
+
+  const unreadReports =
+    db.meetingReports.filter((r) => !r.readByAdmin).length +
+    db.noShowOccurrences.filter((o) => !o.readByAdmin).length +
+    db.rescheduleRecords.filter((r) => !r.readByAdmin).length;
+
+  const openReviewModal = (sub) => {
+    setReviewSubmission(sub);
+    setEditForm({
+      name: sub.name,
+      segment: sub.segment,
+      whatsapp: sub.whatsapp,
+      meetingDate: sub.meetingDate,
+      meetingTime: sub.meetingTime,
+      sellerId: activeSellers[0]?.id || '',
+      notes: sub.notes || '',
+    });
+  };
+
+  const handleApproveAndDistribute = (e) => {
+    e.preventDefault();
+    try {
+      dataEngine.approveSdrSubmission(user, reviewSubmission.id, editForm);
+      soundEngine.playSfx('success');
+      notify(`Lead "${editForm.name}" revisado pelo Pablo e enviado ao vendedor!`, 'success');
+      setReviewSubmission(null);
+    } catch (err) {
+      soundEngine.playSfx('error');
+      notify(err.message, 'error');
+    }
+  };
+
+  const handlePabloSaleDecision = (saleId, decision) => {
+    try {
+      dataEngine.validateReportedSaleByPablo(user, saleId, decision);
+      if (decision === 'not_sold') {
+        soundEngine.playSfx('warning');
+        notify('Registro atualizado como Não Vendido (oculto para o SDR).', 'warning');
+      } else if (decision === 'confirmed_sdr') {
+        soundEngine.playSfx('success');
+        notify('Venda SDR confirmada! Notificada no painel do SDR (US$ 50 Wix).', 'success');
+      } else {
+        soundEngine.playSfx('success');
+        notify('Venda Vercel confirmada para Pablo e vendedor (oculta para o SDR).', 'success');
+      }
+    } catch (err) {
+      soundEngine.playSfx('error');
+      notify(err.message, 'error');
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* FILA 1: Relatórios com Venda Aguardando Leitura e Decisão do Pablo */}
+      {pendingSalesValidation.length > 0 && (
+        <Card glow className="p-6">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+            <div>
+              <Badge tone="primary">Leitura Obrigatória do Pablo</Badge>
+              <h2 className="text-base font-semibold mt-1.5">
+                Relatórios com Venda Aguardando Validação ({pendingSalesValidation.length})
+              </h2>
+              <p className="text-xs opacity-70">
+                Nenhuma venda é contabilizada nos dashboards antes de você abrir o relatório do vendedor e confirmar abaixo.
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            {pendingSalesValidation.map((sale) => {
+              const client = db.clients.find((c) => c.id === sale.clientId);
+              const report = db.meetingReports.find((r) => r.id === sale.reportId);
+              return (
+                <div
+                  key={sale.id}
+                  className="p-4 rounded-xl border flex flex-col lg:flex-row lg:items-center justify-between gap-4"
+                  style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border }}
+                >
+                  <div className="space-y-1 text-xs">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <strong className="text-sm">{client?.name || 'Cliente'}</strong>
+                      <Badge tone="neutral">{client?.segment}</Badge>
+                      <Badge tone="primary">
+                        Vendedor: {getUserDisplayName(db.users, sale.sellerId)}
+                      </Badge>
+                      {report?.domainPlatform && (
+                        <Badge tone="warning">Domínio relatado: {report.domainPlatform}</Badge>
+                      )}
+                    </div>
+                    <p className="opacity-80">
+                      Valor relatado: <strong>{formatCurrencyBRL(sale.amountSold)}</strong> • Valor enviado:{' '}
+                      <strong>{formatCurrencyBRL(sale.amountReceived)}</strong> • Modalidade:{' '}
+                      <strong>{sale.paymentStructure}</strong> ({sale.paymentMethod})
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      onClick={() => onNavigate('reports')}
+                    >
+                      <FileText className="w-3.5 h-3.5" />
+                      <span>Abrir Relatório para Validar</span>
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
+
+      {/* FILA 2: Leads Enviados pelo SDR Aguardando Revisão do Pablo */}
+      {pendingSdrLeads.length > 0 && (
+        <Card className="p-6" glow>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <Badge tone="warning">Fila SDR</Badge>
+              <h2 className="text-base font-semibold mt-1.5">
+                Leads Enviados pelo SDR para Revisão do Pablo ({pendingSdrLeads.length})
+              </h2>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {pendingSdrLeads.map((sub) => (
+              <div
+                key={sub.id}
+                className="p-4 rounded-xl border flex flex-col justify-between gap-3"
+                style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border }}
+              >
+                <div className="text-xs space-y-1">
+                  <div className="flex items-center justify-between">
+                    <strong className="text-sm">{sub.name}</strong>
+                    <Badge tone="neutral">{sub.segment}</Badge>
+                  </div>
+                  <p className="opacity-75">WhatsApp: {sub.whatsapp}</p>
+                  <p className="opacity-75">
+                    Call sugerida: <strong>{formatDateWithWeekdayBR(sub.meetingDate, sub.meetingTime)}</strong>
+                  </p>
+                  {sub.notes && <p className="opacity-65 italic">"{sub.notes}"</p>}
+                </div>
+                <Button size="sm" variant="primary" onClick={() => openReviewModal(sub)}>
+                  <Edit3 className="w-3.5 h-3.5" />
+                  <span>Revisar, Editar & Enviar ao Vendedor</span>
+                </Button>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* KPIs Executivos do Pablo */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+        <Card className="p-4" onClick={() => onNavigate('users')}>
+          <span className="text-xs opacity-65">Vendedores Ativos</span>
+          <div className="text-2xl font-bold mt-1">{activeSellers.length}</div>
+        </Card>
+        <Card className="p-4" onClick={() => onNavigate('clients')}>
+          <span className="text-xs opacity-65">Clientes Cadastrados</span>
+          <div className="text-2xl font-bold mt-1">{db.clients.length}</div>
+        </Card>
+        <Card className="p-4" onClick={() => onNavigate('clients')}>
+          <span className="text-xs opacity-65">Contatos Realizados / Pend.</span>
+          <div className="text-xl font-bold mt-1">
+            <span style={{ color: '#2AC78E' }}>{contactsDone}</span> /{' '}
+            <span style={{ color: '#F2B450' }}>{contactsPending}</span>
+          </div>
+        </Card>
+        <Card className="p-4" onClick={() => onNavigate('meetings')}>
+          <span className="text-xs opacity-65">Reuniões Realiz. / Próx.</span>
+          <div className="text-xl font-bold mt-1">
+            {completedMeetings} / {upcomingMeetings}
+          </div>
+        </Card>
+        <Card className="p-4" onClick={() => onNavigate('reports')}>
+          <span className="text-xs opacity-65">Relatórios Não Lidos</span>
+          <div className="text-2xl font-bold mt-1" style={{ color: '#B87CFF' }}>
+            {unreadReports}
+          </div>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <Card className="p-5" onClick={() => onNavigate('sales')}>
+          <span className="text-xs opacity-65">Vendas Válidas</span>
+          <div className="text-2xl font-bold mt-1">{validSales.length}</div>
+        </Card>
+        <Card className="p-5" onClick={() => onNavigate('sales')}>
+          <span className="text-xs opacity-65">Valor Vendido Total</span>
+          <div className="text-2xl font-bold mt-1" style={{ color: '#B87CFF' }}>
+            {formatCurrencyBRL(totalSold)}
+          </div>
+        </Card>
+        <Card className="p-5" onClick={() => onNavigate('sales')}>
+          <span className="text-xs opacity-65">Valor Recebido Efetivo</span>
+          <div className="text-2xl font-bold mt-1" style={{ color: '#2AC78E' }}>
+            {formatCurrencyBRL(totalReceived)}
+          </div>
+        </Card>
+      </div>
+
+      {/* Funil Comercial Geral & Desempenho por Vendedor */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card className="p-6">
+          <h3 className="text-sm font-semibold mb-4">Funil Comercial Geral</h3>
+          <div className="space-y-3 text-xs">
+            {[
+              { label: 'Cliente Atribuído', count: db.clients.length, color: '#8017FF' },
+              { label: 'Contato Realizado', count: contactsDone, color: '#9D4EDD' },
+              { label: 'Reunião de Vendas Realizada', count: completedMeetings, color: '#3B82F6' },
+              { label: 'Venda Concluída', count: validSales.length, color: '#16845B' },
+            ].map((stage, i) => {
+              const base = Math.max(1, db.clients.length);
+              const pct = Math.round((stage.count / base) * 100);
+              return (
+                <div key={i}>
+                  <div className="flex justify-between mb-1">
+                    <span>{stage.label}</span>
+                    <strong>
+                      {stage.count} ({db.clients.length === 0 ? 0 : pct}%)
+                    </strong>
+                  </div>
+                  <div className="w-full h-2.5 rounded-full overflow-hidden" style={{ backgroundColor: tokens.surfaceElevated }}>
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{ width: `${db.clients.length === 0 ? 0 : pct}%`, backgroundColor: stage.color }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+
+        <Card className="p-6">
+          <h3 className="text-sm font-semibold mb-4">Desempenho por Vendedor</h3>
+          {activeSellers.length === 0 ? (
+            <p className="text-xs opacity-60">Nenhum vendedor ativo cadastrado.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left">
+                <thead>
+                  <tr className="border-b opacity-65" style={{ borderColor: tokens.border }}>
+                    <th className="py-2">Vendedor</th>
+                    <th className="py-2">Contatos</th>
+                    <th className="py-2">Reuniões</th>
+                    <th className="py-2">Vendas</th>
+                    <th className="py-2 text-right">Vendido</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {activeSellers.map((s) => {
+                    const sContacts = db.clients.filter(
+                      (c) => c.assignedSellerId === s.id && c.firstContactStatus === 'done'
+                    ).length;
+                    const sMeetings = db.meetings.filter(
+                      (m) => m.sellerId === s.id && m.status === 'completed'
+                    ).length;
+                    const sSales = validSales.filter((sal) => sal.sellerId === s.id);
+                    const sTotal = sSales.reduce((a, b) => a + (Number(b.amountSold) || 0), 0);
+                    return (
+                      <tr key={s.id} className="border-b" style={{ borderColor: tokens.border }}>
+                        <td className="py-2.5 font-medium">{s.name}</td>
+                        <td className="py-2.5">{sContacts}</td>
+                        <td className="py-2.5">{sMeetings}</td>
+                        <td className="py-2.5">{sSales.length}</td>
+                        <td className="py-2.5 text-right font-semibold">{formatCurrencyBRL(sTotal)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      </div>
+
+      {/* Atividades Recentes */}
+      <Card className="p-6">
+        <h3 className="text-sm font-semibold mb-3">Atividades Recentes da Operação</h3>
+        {db.timeline.length === 0 ? (
+          <p className="text-xs opacity-60">Nenhuma atividade registrada ainda.</p>
+        ) : (
+          <div className="space-y-2 max-h-64 overflow-y-auto">
+            {db.timeline.slice(0, 15).map((ev) => {
+              const cli = db.clients.find((c) => c.id === ev.clientId);
+              return (
+                <div
+                  key={ev.id}
+                  className="p-3 rounded-xl border text-xs flex items-center justify-between gap-3"
+                  style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border }}
+                >
+                  <div>
+                    <strong>{ev.title}</strong> •{' '}
+                    <span style={{ color: '#B87CFF' }}>{cli?.name || 'Cliente'}</span> —{' '}
+                    <span className="opacity-75">{ev.description}</span>
+                  </div>
+                  <span className="opacity-50 whitespace-nowrap">{formatDateTimeBR(ev.createdAt)}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
+
+      {/* Modal de Revisão do Lead SDR pelo Pablo */}
+      <Modal
+        open={!!reviewSubmission}
+        onClose={() => setReviewSubmission(null)}
+        title="Revisar Lead Enviado pelo SDR"
+        subtitle="Confira e edite qualquer informação antes de distribuir oficialmente ao vendedor."
+      >
+        <form onSubmit={handleApproveAndDistribute} className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <InputField
+              label="Nome do cliente"
+              required
+              value={editForm.name}
+              onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+            />
+            <InputField
+              label="Segmento da empresa"
+              required
+              value={editForm.segment}
+              onChange={(e) => setEditForm({ ...editForm, segment: e.target.value })}
+            />
+            <InputField
+              label="WhatsApp com código do país"
+              required
+              value={editForm.whatsapp}
+              onChange={(e) => setEditForm({ ...editForm, whatsapp: e.target.value })}
+            />
+            <SelectField
+              label="Vendedor responsável"
+              required
+              value={editForm.sellerId}
+              onChange={(e) => setEditForm({ ...editForm, sellerId: e.target.value })}
+            >
+              {activeSellers.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name} ({s.email})
+                </option>
+              ))}
+            </SelectField>
+            <InputField
+              label="Data da reunião de vendas"
+              type="date"
+              required
+              value={editForm.meetingDate}
+              onChange={(e) => setEditForm({ ...editForm, meetingDate: e.target.value })}
+            />
+            <InputField
+              label="Horário da reunião"
+              type="time"
+              required
+              value={editForm.meetingTime}
+              onChange={(e) => setEditForm({ ...editForm, meetingTime: e.target.value })}
+            />
+          </div>
+          <TextAreaField
+            label="Observações"
+            rows={3}
+            value={editForm.notes}
+            onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
+          />
+          <div className="flex justify-end gap-3">
+            <Button variant="secondary" onClick={() => setReviewSubmission(null)}>
+              Cancelar
+            </Button>
+            <Button type="submit" variant="primary">
+              <Send className="w-4 h-4" />
+              <span>Aprovar & Enviar ao Vendedor</span>
+            </Button>
+          </div>
+        </form>
+      </Modal>
+    </div>
+  );
+}
+
+// ============================================================================
+// 13. PÁGINA: CLIENTES E CONTATOS (CADASTRO DO PABLO + CARTEIRA + REATRIBUIÇÃO)
+// ============================================================================
+function ClientsAndContactsPage({ onOpenMeetingModal, onOpenDossier }) {
+  const { user, db, tokens, notify } = useApp();
+  const [search, setSearch] = useState('');
+  const [sellerFilter, setSellerFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+
+  // Cadastro direto pelo Pablo
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [form, setForm] = useState({
+    name: '',
+    segment: '',
+    whatsapp: '',
+    meetingDate: '',
+    meetingTime: '',
+    sellerId: '',
+    notes: '',
+  });
+
+  // Reatribuição pelo Pablo
+  const [reassignClientObj, setReassignClientObj] = useState(null);
+  const [targetSellerId, setTargetSellerId] = useState('');
+
+  const activeSellers = db.users.filter((u) => u.role === 'seller' && u.active && !u.deleted);
+
+  const visibleClients = useMemo(() => {
+    return db.clients.filter((c) => {
+      if (user.role === 'seller' && c.assignedSellerId !== user.id) return false;
+      if (user.role === 'admin' && sellerFilter !== 'all' && c.assignedSellerId !== sellerFilter) return false;
+      if (
+        search &&
+        !c.name.toLowerCase().includes(search.toLowerCase()) &&
+        !c.segment.toLowerCase().includes(search.toLowerCase()) &&
+        !c.whatsapp.includes(search)
+      ) {
+        return false;
+      }
+      const mtg = db.meetings.find((m) => m.id === c.currentMeetingId);
+      if (statusFilter === 'contact_pending' && c.firstContactStatus !== 'pending') return false;
+      if (statusFilter === 'meeting_scheduled' && mtg?.status !== 'scheduled') return false;
+      if (statusFilter === 'meeting_completed' && mtg?.status !== 'completed') return false;
+      return true;
+    });
+  }, [db, user, search, sellerFilter, statusFilter]);
+
+  const handleCreateClient = (e) => {
+    e.preventDefault();
+    try {
+      dataEngine.createAndAssignClient(user, form);
+      soundEngine.playSfx('success');
+      notify('Cliente cadastrado e distribuído imediatamente ao vendedor!', 'success');
+      setShowCreateModal(false);
+      setForm({ name: '', segment: '', whatsapp: '', meetingDate: '', meetingTime: '', sellerId: '', notes: '' });
+    } catch (err) {
+      soundEngine.playSfx('error');
+      notify(err.message, 'error');
+    }
+  };
+
+  const handleReassign = (e) => {
+    e.preventDefault();
+    try {
+      dataEngine.reassignClient(user, reassignClientObj.id, targetSellerId);
+      soundEngine.playSfx('success');
+      notify('Cliente transferido com histórico preservado!', 'success');
+      setReassignClientObj(null);
+    } catch (err) {
+      soundEngine.playSfx('error');
+      notify(err.message, 'error');
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Barra de filtros e ação do Pablo */}
+      <Card className="p-4 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+        <div className="flex flex-1 flex-wrap items-center gap-3">
+          <div className="relative flex-1 min-w-[200px]">
+            <Search className="w-4 h-4 absolute left-3.5 top-3 opacity-50" />
+            <input
+              type="text"
+              placeholder="Buscar por nome, segmento ou WhatsApp..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full pl-10 pr-3.5 py-2 rounded-xl text-sm border outline-none"
+              style={{
+                backgroundColor: tokens.surfaceElevated,
+                borderColor: tokens.border,
+                color: tokens.text,
+              }}
+            />
+          </div>
+
+          {user.role === 'admin' && (
             <select
               value={sellerFilter}
-              onChange={(e) => {
-                soundEngine.playSfx('click');
-                setSellerFilter(e.target.value);
-              }}
-              style={{
-                backgroundColor: tokens.bg,
-                borderColor: tokens.border,
-                color: tokens.textPrimary,
-                borderRadius: 10,
-              }}
-              className="border px-3 py-1.5 text-xs outline-none"
+              onChange={(e) => setSellerFilter(e.target.value)}
+              className="px-3 py-2 rounded-xl text-xs border outline-none"
+              style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border, color: tokens.text }}
             >
               <option value="all">Todos os vendedores</option>
-              {sellersList.map((s) => (
+              {activeSellers.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.name} {s.status !== 'active' ? `(${s.status})` : ''}
+                  {s.name}
                 </option>
               ))}
             </select>
           )}
 
-          <div
-            style={{ backgroundColor: tokens.bg, borderColor: tokens.border, borderRadius: 10 }}
-            className="border p-1 flex items-center gap-1"
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="px-3 py-2 rounded-xl text-xs border outline-none"
+            style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border, color: tokens.text }}
           >
-            {[
-              { id: 'all', label: 'Todo Período' },
-              { id: 'today', label: 'Hoje' },
-              { id: '7d', label: '7 dias' },
-              { id: '30d', label: '30 dias' },
-            ].map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => {
-                  soundEngine.playSfx('click');
-                  setPeriodFilter(p.id);
-                }}
-                style={{
-                  backgroundColor: periodFilter === p.id ? 'rgba(128, 23, 255, 0.18)' : 'transparent',
-                  color: periodFilter === p.id ? tokens.primary : tokens.textSecondary,
-                  borderRadius: 8,
-                }}
-                className="px-2.5 py-1 text-xs font-medium transition-colors"
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      </PwCard>
-
-      {/* Grid de KPIs Clicáveis */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-        {kpisToRender.map((kpi) => {
-          const Icon = kpi.icon;
-          return (
-            <PwCard
-              key={kpi.label}
-              tokens={tokens}
-              onClick={() => {
-                soundEngine.playSfx('click');
-                kpi.onClick();
-              }}
-              className="p-4 flex items-center justify-between group"
-            >
-              <div>
-                <span style={{ color: tokens.textSecondary }} className="text-xs font-medium block">
-                  {kpi.label}
-                </span>
-                <span style={{ color: tokens.textPrimary }} className="text-xl font-semibold mt-1 block">
-                  {kpi.value}
-                </span>
-              </div>
-              <div
-                style={{
-                  backgroundColor: 'rgba(128, 23, 255, 0.12)',
-                  color: kpi.accent,
-                  borderRadius: 11,
-                }}
-                className="w-10 h-10 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform"
-              >
-                <Icon className="w-5 h-5" />
-              </div>
-            </PwCard>
-          );
-        })}
-      </div>
-
-      {/* Painel Contagem de Vendas & Comissão + Funil Comercial */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-        <div className="lg:col-span-7">
-          <SalesCountAndCommissionCard
-            salesCount={sellerAllValidSales.length}
-            totalSoldValue={sellerAllSoldTotal}
-            tokens={tokens}
-          />
+            <option value="all">Todos os status</option>
+            <option value="contact_pending">Contato pendente</option>
+            <option value="meeting_scheduled">Reunião agendada</option>
+            <option value="meeting_completed">Reunião realizada</option>
+          </select>
         </div>
 
-        {/* Funil Comercial */}
-        <PwCard tokens={tokens} className="lg:col-span-5 p-5 flex flex-col justify-between gap-4">
-          <div>
-            <h3 style={{ color: tokens.textPrimary }} className="text-sm font-semibold">
-              {isAdmin ? 'Funil Comercial Geral' : 'Meu Funil Comercial'}
-            </h3>
-            <p style={{ color: tokens.textSecondary }} className="text-xs mt-0.5">
-              Conversão real entre etapas da operação PontoWeb.
-            </p>
-          </div>
-
-          <div className="flex flex-col gap-3">
-            {funnelSteps.map((step) => (
-              <div key={step.label} className="flex flex-col gap-1">
-                <div className="flex items-center justify-between text-xs">
-                  <span style={{ color: tokens.textPrimary }} className="font-medium">
-                    {step.label}
-                  </span>
-                  <span style={{ color: tokens.textSecondary }}>
-                    <strong style={{ color: tokens.textPrimary }}>{step.value}</strong> ({step.pct}%)
-                  </span>
-                </div>
-                <div
-                  style={{ backgroundColor: tokens.bg, borderColor: tokens.border }}
-                  className="w-full h-2.5 rounded-full border overflow-hidden"
-                >
-                  <div
-                    style={{
-                      width: `${Math.max(step.value > 0 ? 6 : 0, step.pct)}%`,
-                      backgroundColor: step.color,
-                    }}
-                    className="h-full rounded-full transition-all duration-300"
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-        </PwCard>
-      </div>
-
-      {/* Seção Específica por Perfil */}
-      {!isAdmin ? (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-          {/* Minhas Próximas Ações */}
-          <PwCard tokens={tokens} className="lg:col-span-5 p-5 flex flex-col gap-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 style={{ color: tokens.textPrimary }} className="text-sm font-semibold">
-                  Minhas Próximas Ações
-                </h3>
-                <p style={{ color: tokens.textSecondary }} className="text-xs mt-0.5">
-                  Fila sequencial: 1º WhatsApp, depois Reunião de Vendas.
-                </p>
-              </div>
-              <PwBadge variant="primary" tokens={tokens}>
-                {sellerNextActions.length} pendência(s)
-              </PwBadge>
-            </div>
-
-            {sellerNextActions.length === 0 ? (
-              <PwEmptyState
-                icon={CheckCircle2}
-                title="Tudo em dia!"
-                description="Você não possui contatos pendentes nem reuniões aguardando registro."
-                tokens={tokens}
-              />
-            ) : (
-              <div className="flex flex-col gap-2.5">
-                {sellerNextActions.map((act) => (
-                  <div
-                    key={act.id}
-                    style={{ backgroundColor: tokens.bg, borderColor: tokens.border, borderRadius: 11 }}
-                    className="border p-3 flex flex-col gap-2"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <PwBadge variant={act.variant} tokens={tokens}>
-                          {act.badge}
-                        </PwBadge>
-                        <p style={{ color: tokens.textPrimary }} className="text-xs font-semibold mt-1.5">
-                          {act.title}
-                        </p>
-                        <p style={{ color: tokens.textSecondary }} className="text-[11px] mt-0.5">
-                          {act.subtitle}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-2 pt-1">
-                      {act.client.firstContactStatus === 'pending' ? (
-                        <>
-                          <a
-                            href={buildWhatsAppLink(act.client.whatsapp, act.client.name)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={() => soundEngine.playSfx('click')}
-                            style={{
-                              backgroundColor: '#16845B',
-                              color: '#FFFFFF',
-                              borderRadius: 9,
-                            }}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium"
-                          >
-                            <ExternalLink className="w-3 h-3" />
-                            Abrir WhatsApp
-                          </a>
-                          <PwButton
-                            size="xs"
-                            icon={Check}
-                            onClick={() => onConfirmFirstContact(act.client.id)}
-                            tokens={tokens}
-                          >
-                            Já mandei mensagem
-                          </PwButton>
-                        </>
-                      ) : (
-                        <>
-                          <PwButton
-                            size="xs"
-                            icon={CheckCircle2}
-                            onClick={() => onOpenRVendas(act.client, 'REPORT')}
-                            tokens={tokens}
-                          >
-                            Já fiz
-                          </PwButton>
-                          <a
-                            href={buildWhatsAppLink(act.client.whatsapp, act.client.name)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={() => soundEngine.playSfx('click')}
-                            style={{
-                              backgroundColor: '#16845B',
-                              color: '#FFFFFF',
-                              borderRadius: 9,
-                            }}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium"
-                          >
-                            <ExternalLink className="w-3 h-3" />
-                            WhatsApp
-                          </a>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </PwCard>
-
-          {/* Carteira Ativa do Vendedor */}
-          <div className="lg:col-span-7 flex flex-col gap-3.5">
-            <div className="flex items-center justify-between">
-              <h3 style={{ color: tokens.textPrimary }} className="text-sm font-semibold">
-                Meus Clientes Recentes
-              </h3>
-              <PwButton size="xs" variant="secondary" onClick={() => onNavigate('clients')} tokens={tokens}>
-                Ver Todos
-              </PwButton>
-            </div>
-
-            {scopedClients.length === 0 ? (
-              <PwEmptyState
-                icon={Users}
-                title="Nenhum cliente atribuído neste período"
-                description="Assim que o administrador distribuir clientes para sua conta, eles aparecerão aqui em tempo real."
-                tokens={tokens}
-              />
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {scopedClients.slice(0, 4).map((client) => (
-                  <ClientOperationalCard
-                    key={client.id}
-                    client={client}
-                    db={db}
-                    currentUser={currentUser}
-                    onConfirmFirstContact={onConfirmFirstContact}
-                    onOpenReassign={onOpenReassign}
-                    onOpenRVendas={onOpenRVendas}
-                    onOpenDossier={onOpenDossier}
-                    showToast={showToast}
-                    tokens={tokens}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      ) : (
-        /* Visão Administrativa: Desempenho por Vendedor + Atividades Recentes */
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-          <PwCard tokens={tokens} className="lg:col-span-7 p-5 flex flex-col gap-4">
-            <div>
-              <h3 style={{ color: tokens.textPrimary }} className="text-sm font-semibold">
-                Desempenho por Vendedor
-              </h3>
-              <p style={{ color: tokens.textSecondary }} className="text-xs mt-0.5">
-                Taxa de comparecimento considera exclusivamente reuniões realizadas vs. faltas presenciais.
-              </p>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr style={{ borderColor: tokens.border, color: tokens.textSecondary }} className="border-b">
-                    <th className="py-2.5 pr-3 font-medium">Vendedor</th>
-                    <th className="py-2.5 px-2 font-medium text-center">Contatos</th>
-                    <th className="py-2.5 px-2 font-medium text-center">Reuniões</th>
-                    <th className="py-2.5 px-2 font-medium text-center">Comparecimento</th>
-                    <th className="py-2.5 px-2 font-medium text-center">Vendas</th>
-                    <th className="py-2.5 pl-2 font-medium text-right">Valor Vendido</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sellerPerformanceRows.map((row) => (
-                    <tr
-                      key={row.seller.id}
-                      style={{ borderColor: tokens.border }}
-                      className="border-b last:border-b-0"
-                    >
-                      <td className="py-3 pr-3">
-                        <span style={{ color: tokens.textPrimary }} className="font-semibold block">
-                          {dataEngine.resolveUserLabel(db, row.seller.id, row.seller.name)}
-                        </span>
-                        <span style={{ color: tokens.textSecondary }} className="text-[11px]">
-                          {row.clientsCount} cliente(s) na carteira
-                        </span>
-                      </td>
-                      <td style={{ color: tokens.textPrimary }} className="py-3 px-2 text-center font-medium">
-                        {row.contactsCount}
-                      </td>
-                      <td style={{ color: tokens.textPrimary }} className="py-3 px-2 text-center font-medium">
-                        {row.meetingsDoneCount}
-                      </td>
-                      <td className="py-3 px-2 text-center">
-                        {row.attendanceRate === null ? (
-                          <span style={{ color: tokens.textSecondary }}>—</span>
-                        ) : (
-                          <PwBadge
-                            variant={row.attendanceRate >= 70 ? 'success' : 'warning'}
-                            tokens={tokens}
-                          >
-                            {row.attendanceRate}%
-                          </PwBadge>
-                        )}
-                      </td>
-                      <td style={{ color: tokens.textPrimary }} className="py-3 px-2 text-center font-semibold">
-                        {row.salesCount}
-                      </td>
-                      <td style={{ color: tokens.success }} className="py-3 pl-2 text-right font-semibold">
-                        {formatCurrencyBRL(row.soldTotal)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </PwCard>
-
-          <PwCard tokens={tokens} className="lg:col-span-5 p-5 flex flex-col gap-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 style={{ color: tokens.textPrimary }} className="text-sm font-semibold">
-                  Atividades Recentes
-                </h3>
-                <p style={{ color: tokens.textSecondary }} className="text-xs mt-0.5">
-                  Linha cronológica consolidada da operação.
-                </p>
-              </div>
-              <PwBadge variant="neutral" tokens={tokens}>
-                {recentActivities.length}
-              </PwBadge>
-            </div>
-
-            {recentActivities.length === 0 ? (
-              <PwEmptyState
-                icon={Activity}
-                title="Sem atividades no período"
-                description="Cadastre clientes ou altere o filtro de período para visualizar eventos."
-                tokens={tokens}
-              />
-            ) : (
-              <div className="flex flex-col gap-2.5 max-h-96 overflow-y-auto pr-1">
-                {recentActivities.map((act) => (
-                  <div
-                    key={act.id}
-                    onClick={() => {
-                      soundEngine.playSfx('click');
-                      onOpenDossier(act.clientObj);
-                    }}
-                    style={{ backgroundColor: tokens.bg, borderColor: tokens.border, borderRadius: 10 }}
-                    className="border p-3 text-xs cursor-pointer hover:border-[#8017FF] transition-colors"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span style={{ color: tokens.primary }} className="font-semibold">
-                        {act.title}
-                      </span>
-                      <span style={{ color: tokens.textSecondary }} className="text-[10px]">
-                        {formatSaoPauloDateTime(act.timestamp)}
-                      </span>
-                    </div>
-                    <p style={{ color: tokens.textPrimary }} className="font-medium mt-0.5">
-                      Cliente: {act.clientName}
-                    </p>
-                    <p style={{ color: tokens.textSecondary }} className="text-[11px] mt-0.5 line-clamp-2">
-                      {act.description}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </PwCard>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/**
- * ============================================================================
- * PÁGINA 2: CLIENTES E CONTATOS (CADASTRO ADMIN + FILTROS + CARTEIRA)
- * ============================================================================
- */
-function ClientsAndContactsPage({
-  db,
-  currentUser,
-  initialStatusFilter = 'all',
-  onConfirmFirstContact,
-  onOpenReassign,
-  onOpenRVendas,
-  onOpenDossier,
-  showToast,
-  tokens,
-}) {
-  const isAdmin = currentUser.role === 'admin';
-  const todayISO = getTodaySaoPauloISO();
-
-  const [showCreateForm, setShowCreateForm] = useState(false);
-  const [name, setName] = useState('');
-  const [segment, setSegment] = useState('');
-  const [whatsapp, setWhatsapp] = useState('+55 ');
-  const [meetingDate, setMeetingDate] = useState('');
-  const [meetingTime, setMeetingTime] = useState('');
-  const [sellerId, setSellerId] = useState('');
-  const [notes, setNotes] = useState('');
-  const [creating, setCreating] = useState(false);
-
-  const [searchQuery, setSearchQuery] = useState('');
-  const [segmentFilter, setSegmentFilter] = useState('all');
-  const [sellerFilter, setSellerFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState(initialStatusFilter);
-  const [periodFilter, setPeriodFilter] = useState('all');
-
-  useEffect(() => {
-    setStatusFilter(initialStatusFilter || 'all');
-  }, [initialStatusFilter]);
-
-  const activeSellers = useMemo(
-    () => db.users.filter((u) => u.role === 'seller' && u.status === 'active'),
-    [db.users]
-  );
-
-  useEffect(() => {
-    if (!sellerId && activeSellers.length > 0) {
-      setSellerId(activeSellers[0].id);
-    }
-  }, [activeSellers, sellerId]);
-
-  const handleCreateClient = (e) => {
-    e.preventDefault();
-    setCreating(true);
-    const res = dataEngine.createAndDistributeClient(currentUser, {
-      name,
-      segment,
-      whatsapp,
-      meetingDate,
-      meetingTime,
-      sellerId,
-      notes,
-    });
-    setCreating(false);
-
-    if (!res.ok) {
-      soundEngine.playSfx('error');
-      showToast('error', 'Validação de cadastro', res.message);
-      return;
-    }
-
-    soundEngine.playSfx('success');
-    showToast(
-      'success',
-      'Cliente cadastrado e distribuído',
-      `${res.client.name} atribuído a ${res.client.assignedSellerName} com reunião em ${formatMeetingSchedule(
-        res.client.meetingDate,
-        res.client.meetingTime,
-        true
-      )}.`
-    );
-    setName('');
-    setSegment('');
-    setWhatsapp('+55 ');
-    setMeetingDate('');
-    setMeetingTime('');
-    setNotes('');
-    setShowCreateForm(false);
-  };
-
-  const uniqueSegments = useMemo(() => {
-    const set = new Set();
-    db.clients.forEach((c) => {
-      if (isAdmin || c.assignedSellerId === currentUser.id) {
-        if (c.segment) set.add(c.segment);
-      }
-    });
-    return Array.from(set).sort();
-  }, [db.clients, isAdmin, currentUser.id]);
-
-  const filteredClients = useMemo(() => {
-    return db.clients.filter((c) => {
-      if (!isAdmin && c.assignedSellerId !== currentUser.id) return false;
-      if (isAdmin && sellerFilter !== 'all' && c.assignedSellerId !== sellerFilter) return false;
-      if (segmentFilter !== 'all' && c.segment !== segmentFilter) return false;
-
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const matchName = c.name.toLowerCase().includes(q);
-        const matchPhone = c.whatsapp.includes(q.replace(/\D/g, '') || q);
-        if (!matchName && !matchPhone) return false;
-      }
-
-      if (statusFilter === 'pending_contact' && c.firstContactStatus !== 'pending') return false;
-      if (statusFilter === 'contact_done' && c.firstContactStatus !== 'completed') return false;
-      if (
-        statusFilter === 'future_meeting' &&
-        !(c.meetingStatus === 'scheduled' && c.meetingDate >= todayISO)
-      )
-        return false;
-      if (
-        statusFilter === 'overdue_meeting' &&
-        !(c.meetingStatus === 'scheduled' && c.meetingDate < todayISO)
-      )
-        return false;
-      if (statusFilter === 'meeting_done' && c.meetingStatus !== 'completed') return false;
-      if (statusFilter === 'sale_won' && !c.hasSale) return false;
-
-      if (periodFilter !== 'all') {
-        const dStr = c.createdAt.slice(0, 10);
-        if (periodFilter === 'today' && dStr !== todayISO) return false;
-        const diff = Math.floor(
-          (new Date(`${todayISO}T00:00:00Z`).getTime() - new Date(`${dStr}T00:00:00Z`).getTime()) /
-            86400000
-        );
-        if (periodFilter === '7d' && (diff < 0 || diff > 7)) return false;
-        if (periodFilter === '30d' && (diff < 0 || diff > 30)) return false;
-      }
-
-      return true;
-    });
-  }, [
-    db.clients,
-    isAdmin,
-    currentUser.id,
-    sellerFilter,
-    segmentFilter,
-    searchQuery,
-    statusFilter,
-    periodFilter,
-    todayISO,
-  ]);
-
-  return (
-    <div className="flex flex-col gap-5">
-      {/* Cabeçalho de Ações */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 style={{ color: tokens.textPrimary }} className="text-base font-semibold">
-            {isAdmin ? 'Carteira Geral & Distribuição de Clientes' : 'Meus Clientes & Contatos'}
-          </h2>
-          <p style={{ color: tokens.textSecondary }} className="text-xs mt-0.5">
-            {filteredClients.length} cliente(s) exibido(s) conforme os filtros ativos.
-          </p>
-        </div>
-
-        {isAdmin && (
-          <PwButton
-            icon={showCreateForm ? X : UserPlus}
-            variant={showCreateForm ? 'secondary' : 'primary'}
-            onClick={() => setShowCreateForm((v) => !v)}
-            tokens={tokens}
+        {user.role === 'admin' && (
+          <Button
+            variant="primary"
+            onClick={() => {
+              setForm({
+                name: '',
+                segment: '',
+                whatsapp: '',
+                meetingDate: '',
+                meetingTime: '',
+                sellerId: activeSellers[0]?.id || '',
+                notes: '',
+              });
+              setShowCreateModal(true);
+            }}
           >
-            {showCreateForm ? 'Fechar Formulário' : 'Cadastrar & Distribuir Cliente'}
-          </PwButton>
+            <Plus className="w-4 h-4" />
+            <span>Novo Cliente</span>
+          </Button>
         )}
-      </div>
+      </Card>
 
-      {/* Formulário Administrativo de Cadastro e Distribuição */}
-      {isAdmin && showCreateForm && (
-        <PwCard tokens={tokens} glow className="p-5">
-          <div className="mb-4">
-            <h3 style={{ color: tokens.textPrimary }} className="text-sm font-semibold">
-              Novo Cliente — Distribuição Atômica (America/Sao_Paulo)
-            </h3>
-            <p style={{ color: tokens.textSecondary }} className="text-xs mt-0.5">
-              Cria simultaneamente o cadastro, a tarefa de primeiro contato e o agendamento único da Reunião de Vendas.
-            </p>
-          </div>
-
-          <form onSubmit={handleCreateClient} className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <PwInput
-              label="Nome do cliente"
-              id="cli-name"
-              required
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Ex: Maria, Gabriel..."
-              icon={User}
-              tokens={tokens}
-            />
-            <PwInput
-              label="Segmento da empresa"
-              id="cli-segment"
-              required
-              value={segment}
-              onChange={(e) => setSegment(e.target.value)}
-              placeholder="Ex: Clínica Odontológica / Advocacia"
-              icon={Building2}
-              tokens={tokens}
-            />
-            <PwInput
-              label="WhatsApp com código do país"
-              id="cli-whatsapp"
-              required
-              value={whatsapp}
-              onChange={(e) => setWhatsapp(e.target.value)}
-              placeholder="+55 11 99999-9999"
-              icon={Phone}
-              tokens={tokens}
-            />
-            <PwInput
-              label="Data da reunião de vendas"
-              id="cli-date"
-              type="date"
-              required
-              value={meetingDate}
-              onChange={(e) => setMeetingDate(e.target.value)}
-              tokens={tokens}
-            />
-            <PwInput
-              label="Horário da reunião (America/Sao_Paulo)"
-              id="cli-time"
-              type="time"
-              required
-              value={meetingTime}
-              onChange={(e) => setMeetingTime(e.target.value)}
-              tokens={tokens}
-            />
-            <PwSelect
-              label="Vendedor responsável (ativos)"
-              id="cli-seller"
-              required
-              value={sellerId}
-              onChange={(e) => setSellerId(e.target.value)}
-              options={
-                activeSellers.length === 0
-                  ? [{ value: '', label: 'Nenhum vendedor ativo disponível' }]
-                  : activeSellers.map((s) => ({
-                      value: s.id,
-                      label: `${s.name} (${s.email})`,
-                    }))
-              }
-              tokens={tokens}
-            />
-            <div className="md:col-span-3">
-              <PwTextarea
-                label="Observações (opcionais)"
-                id="cli-notes"
-                rows={2}
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Contexto inicial do lead, origem ou observações para o vendedor..."
-                tokens={tokens}
-              />
-            </div>
-            <div className="md:col-span-3 flex justify-end gap-2">
-              <PwButton type="button" variant="ghost" onClick={() => setShowCreateForm(false)} tokens={tokens}>
-                Cancelar
-              </PwButton>
-              <PwButton type="submit" loading={creating} icon={Send} tokens={tokens}>
-                Enviar e Distribuir
-              </PwButton>
-            </div>
-          </form>
-        </PwCard>
-      )}
-
-      {/* Barra de Filtros */}
-      <PwCard tokens={tokens} className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-        <PwInput
-          id="filter-search"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Buscar por nome ou WhatsApp..."
-          icon={Search}
-          tokens={tokens}
-        />
-
-        <PwSelect
-          id="filter-segment"
-          value={segmentFilter}
-          onChange={(e) => setSegmentFilter(e.target.value)}
-          options={[
-            { value: 'all', label: 'Todos os segmentos' },
-            ...uniqueSegments.map((seg) => ({ value: seg, label: seg })),
-          ]}
-          tokens={tokens}
-        />
-
-        {isAdmin && (
-          <PwSelect
-            id="filter-seller"
-            value={sellerFilter}
-            onChange={(e) => setSellerFilter(e.target.value)}
-            options={[
-              { value: 'all', label: 'Todos os vendedores' },
-              ...db.users
-                .filter((u) => u.role === 'seller')
-                .map((u) => ({
-                  value: u.id,
-                  label: dataEngine.resolveUserLabel(db, u.id, u.name),
-                })),
-            ]}
-            tokens={tokens}
-          />
-        )}
-
-        <PwSelect
-          id="filter-status"
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          options={[
-            { value: 'all', label: 'Todos os status' },
-            { value: 'pending_contact', label: '1ª Pendência: Confirmar WhatsApp' },
-            { value: 'contact_done', label: 'WhatsApp confirmado' },
-            { value: 'future_meeting', label: 'Reunião futura' },
-            { value: 'overdue_meeting', label: 'Reunião atrasada / sem relatório' },
-            { value: 'meeting_done', label: 'Reunião realizada' },
-            { value: 'sale_won', label: 'Venda concluída' },
-          ]}
-          tokens={tokens}
-        />
-
-        <PwSelect
-          id="filter-period"
-          value={periodFilter}
-          onChange={(e) => setPeriodFilter(e.target.value)}
-          options={[
-            { value: 'all', label: 'Qualquer data' },
-            { value: 'today', label: 'Cadastrados hoje' },
-            { value: '7d', label: 'Últimos 7 dias' },
-            { value: '30d', label: 'Últimos 30 dias' },
-          ]}
-          tokens={tokens}
-        />
-      </PwCard>
-
-      {/* Grid de Clientes */}
-      {filteredClients.length === 0 ? (
-        <PwEmptyState
+      {/* Lista de Clientes */}
+      {visibleClients.length === 0 ? (
+        <EmptyState
           icon={Users}
           title="Nenhum cliente encontrado"
-          description="Ajuste os filtros acima ou cadastre um novo cliente para iniciar o fluxo comercial."
-          tokens={tokens}
-        />
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {filteredClients.map((client) => (
-            <ClientOperationalCard
-              key={client.id}
-              client={client}
-              db={db}
-              currentUser={currentUser}
-              onConfirmFirstContact={onConfirmFirstContact}
-              onOpenReassign={onOpenReassign}
-              onOpenRVendas={onOpenRVendas}
-              onOpenDossier={onOpenDossier}
-              showToast={showToast}
-              tokens={tokens}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/**
- * ============================================================================
- * PÁGINA 3: REUNIÕES DE VENDAS (MÓDULO ÚNICO)
- * ============================================================================
- */
-function SalesMeetingsPage({ db, currentUser, onOpenRVendas, onOpenDossier, tokens }) {
-  const isAdmin = currentUser.role === 'admin';
-  const [statusTab, setStatusTab] = useState('scheduled');
-
-  const meetings = useMemo(() => {
-    return db.meetings
-      .filter((m) => (isAdmin ? true : m.assignedSellerId === currentUser.id))
-      .filter((m) => (statusTab === 'all' ? true : m.status === statusTab))
-      .sort((a, b) => `${a.scheduledDate} ${a.scheduledTime}`.localeCompare(`${b.scheduledDate} ${b.scheduledTime}`));
-  }, [db.meetings, isAdmin, currentUser.id, statusTab]);
-
-  return (
-    <div className="flex flex-col gap-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 style={{ color: tokens.textPrimary }} className="text-base font-semibold">
-            Reuniões de Vendas (Módulo Único)
-          </h2>
-          <p style={{ color: tokens.textSecondary }} className="text-xs mt-0.5">
-            Qualificação, apresentação, negociação e fechamento consolidados em uma única call por ciclo comercial.
-          </p>
-        </div>
-
-        <div
-          style={{ backgroundColor: tokens.surface, borderColor: tokens.border, borderRadius: 11 }}
-          className="border p-1 flex items-center gap-1"
-        >
-          {[
-            { id: 'scheduled', label: 'Agendadas' },
-            { id: 'completed', label: 'Realizadas' },
-            { id: 'no_show', label: 'Vácuos' },
-            { id: 'all', label: 'Todas' },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => {
-                soundEngine.playSfx('click');
-                setStatusTab(tab.id);
-              }}
-              style={{
-                backgroundColor: statusTab === tab.id ? 'rgba(128, 23, 255, 0.16)' : 'transparent',
-                color: statusTab === tab.id ? tokens.primary : tokens.textSecondary,
-                borderRadius: 8,
-              }}
-              className="px-3 py-1.5 text-xs font-medium transition-colors"
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {meetings.length === 0 ? (
-        <PwEmptyState
-          icon={Calendar}
-          title="Nenhuma reunião nesta categoria"
-          description="As reuniões de vendas criadas na distribuição de clientes aparecem aqui automaticamente."
-          tokens={tokens}
+          description="Ajuste os filtros ou cadastre um novo cliente para iniciar a operação."
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {meetings.map((m) => {
-            const client = db.clients.find((c) => c.id === m.clientId);
-            const sellerLabel = dataEngine.resolveUserLabel(db, m.assignedSellerId, m.assignedSellerName);
+          {visibleClients.map((client) => {
+            const mtg = db.meetings.find((m) => m.id === client.currentMeetingId);
+            const cleanWa = sanitizePhoneForWhatsApp(client.whatsapp);
 
             return (
-              <PwCard key={m.id} tokens={tokens} className="p-5 flex flex-col justify-between gap-4">
-                <div className="flex flex-col gap-2">
+              <Card key={client.id} className="p-5 flex flex-col justify-between space-y-4">
+                <div className="space-y-2.5">
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <h4 style={{ color: tokens.textPrimary }} className="text-sm font-semibold">
-                        {m.clientName}
-                      </h4>
-                      <span style={{ color: tokens.textSecondary }} className="text-xs">
-                        {m.clientSegment}
-                      </span>
-                    </div>
-                    <PwBadge
-                      variant={
-                        m.status === 'completed' ? 'success' : m.status === 'no_show' ? 'warning' : 'primary'
-                      }
-                      tokens={tokens}
-                    >
-                      {m.status === 'completed'
-                        ? 'Realizada'
-                        : m.status === 'no_show'
-                        ? 'Vácuo'
-                        : 'Agendada'}
-                    </PwBadge>
-                  </div>
-
-                  <div
-                    style={{ backgroundColor: tokens.bg, borderColor: tokens.border, borderRadius: 10 }}
-                    className="border p-3 text-xs flex flex-col gap-1.5"
-                  >
-                    <div className="flex justify-between">
-                      <span style={{ color: tokens.textSecondary }}>Data e horário:</span>
-                      <strong style={{ color: tokens.textPrimary }}>
-                        {formatMeetingSchedule(m.scheduledDate, m.scheduledTime, true)}
-                      </strong>
-                    </div>
-                    <div className="flex justify-between">
-                      <span style={{ color: tokens.textSecondary }}>Vendedor:</span>
-                      <strong style={{ color: tokens.textPrimary }}>{sellerLabel}</strong>
-                    </div>
-                    {m.rescheduleCount > 0 && (
-                      <div className="flex justify-between">
-                        <span style={{ color: tokens.textSecondary }}>Reagendamentos:</span>
-                        <strong style={{ color: tokens.warning }}>{m.rescheduleCount}x</strong>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between gap-2">
-                  {client && (
-                    <PwButton
-                      size="xs"
-                      variant="secondary"
-                      icon={FileText}
-                      onClick={() => onOpenDossier(client)}
-                      tokens={tokens}
-                    >
-                      Dossiê
-                    </PwButton>
-                  )}
-
-                  {m.status !== 'completed' && client && (
-                    <PwButton
-                      size="xs"
-                      icon={Briefcase}
-                      onClick={() => onOpenRVendas(client, 'SELECT_OUTCOME')}
-                      tokens={tokens}
-                    >
-                      R. Vendas
-                    </PwButton>
-                  )}
-                </div>
-              </PwCard>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/**
- * ============================================================================
- * PÁGINA 4: VENDAS (CONTROLE FINANCEIRO: VALOR VENDIDO vs VALOR RECEBIDO)
- * ============================================================================
- */
-function SalesPage({ db, currentUser, onRefresh, showToast, tokens }) {
-  const isAdmin = currentUser.role === 'admin';
-  const [editingSale, setEditingSale] = useState(null);
-  const [editStatus, setEditStatus] = useState('completed');
-  const [editReceived, setEditReceived] = useState('0');
-  const [editMethod, setEditMethod] = useState('');
-  const [editNotes, setEditNotes] = useState('');
-  const [saving, setSaving] = useState(false);
-
-  const visibleSales = useMemo(() => {
-    return db.sales.filter((s) => (isAdmin ? true : s.sellerId === currentUser.id));
-  }, [db.sales, isAdmin, currentUser.id]);
-
-  const validSales = visibleSales.filter((s) => s.status !== 'cancelled' && s.status !== 'refunded');
-  const totalSold = validSales.reduce((acc, s) => acc + (Number(s.value) || 0), 0);
-  const totalReceived = validSales.reduce((acc, s) => acc + (Number(s.receivedValue) || 0), 0);
-  const pendingToReceive = Math.max(0, totalSold - totalReceived);
-
-  const openEditModal = (sale) => {
-    setEditingSale(sale);
-    setEditStatus(sale.status);
-    setEditReceived(String(sale.receivedValue || 0));
-    setEditMethod(sale.paymentMethod || 'PIX');
-    setEditNotes(sale.notes || '');
-  };
-
-  const handleSaveFinancials = (e) => {
-    e.preventDefault();
-    if (!editingSale) return;
-    setSaving(true);
-    const res = dataEngine.updateSaleFinancials(currentUser, editingSale.id, {
-      status: editStatus,
-      receivedValue: editReceived,
-      paymentMethod: editMethod,
-      notes: editNotes,
-    });
-    setSaving(false);
-
-    if (!res.ok) {
-      soundEngine.playSfx('error');
-      showToast('error', 'Erro ao atualizar venda', res.message);
-      return;
-    }
-
-    soundEngine.playSfx('success');
-    showToast('success', 'Controle financeiro atualizado', 'Valores e status registrados com sucesso.');
-    setEditingSale(null);
-    onRefresh();
-  };
-
-  const statusBadgeMap = {
-    completed: { label: 'Concluída', variant: 'success' },
-    pending_payment: { label: 'Pagamento pendente', variant: 'warning' },
-    cancelled: { label: 'Cancelada', variant: 'error' },
-    refunded: { label: 'Reembolsada', variant: 'error' },
-  };
-
-  return (
-    <div className="flex flex-col gap-5">
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <PwCard tokens={tokens} className="p-4">
-          <span style={{ color: tokens.textSecondary }} className="text-xs font-medium">
-            Valor Vendido (Negociações Válidas)
-          </span>
-          <strong style={{ color: tokens.textPrimary }} className="text-xl font-semibold mt-1 block">
-            {formatCurrencyBRL(totalSold)}
-          </strong>
-          <span style={{ color: tokens.textSecondary }} className="text-[11px] mt-1 block">
-            {validSales.length} venda(s) ativa(s)
-          </span>
-        </PwCard>
-
-        <PwCard tokens={tokens} className="p-4">
-          <span style={{ color: tokens.textSecondary }} className="text-xs font-medium">
-            Valor Recebido (Efetivamente Pago)
-          </span>
-          <strong style={{ color: tokens.success }} className="text-xl font-semibold mt-1 block">
-            {formatCurrencyBRL(totalReceived)}
-          </strong>
-          <span style={{ color: tokens.textSecondary }} className="text-[11px] mt-1 block">
-            Separado do valor contratado
-          </span>
-        </PwCard>
-
-        <PwCard tokens={tokens} className="p-4">
-          <span style={{ color: tokens.textSecondary }} className="text-xs font-medium">
-            Saldo a Receber
-          </span>
-          <strong style={{ color: tokens.warning }} className="text-xl font-semibold mt-1 block">
-            {formatCurrencyBRL(pendingToReceive)}
-          </strong>
-          <span style={{ color: tokens.textSecondary }} className="text-[11px] mt-1 block">
-            Aguardando liquidação financeira
-          </span>
-        </PwCard>
-      </div>
-
-      {visibleSales.length === 0 ? (
-        <PwEmptyState
-          icon={DollarSign}
-          title="Nenhuma venda registrada ainda"
-          description="As vendas concluídas durante a Reunião de Vendas aparecem automaticamente aqui."
-          tokens={tokens}
-        />
-      ) : (
-        <PwCard tokens={tokens} className="overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr style={{ borderColor: tokens.border, color: tokens.textSecondary }} className="border-b">
-                  <th className="p-3.5 font-medium">Cliente</th>
-                  {isAdmin && <th className="p-3.5 font-medium">Vendedor</th>}
-                  <th className="p-3.5 font-medium">Data</th>
-                  <th className="p-3.5 font-medium">Serviço / Modalidade</th>
-                  <th className="p-3.5 font-medium text-right">Valor Vendido</th>
-                  <th className="p-3.5 font-medium text-right">Valor Recebido</th>
-                  <th className="p-3.5 font-medium">Status</th>
-                  <th className="p-3.5 font-medium text-right">Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visibleSales.map((sale) => {
-                  const badge = statusBadgeMap[sale.status] || { label: sale.status, variant: 'neutral' };
-                  const sellerLabel = dataEngine.resolveUserLabel(db, sale.sellerId, sale.sellerName);
-
-                  return (
-                    <tr
-                      key={sale.id}
-                      style={{ borderColor: tokens.border }}
-                      className="border-b last:border-b-0"
-                    >
-                      <td className="p-3.5">
-                        <strong style={{ color: tokens.textPrimary }} className="block">
-                          {sale.clientName}
-                        </strong>
-                        <span style={{ color: tokens.textSecondary }} className="text-[11px]">
-                          {sale.paymentMethod}
-                        </span>
-                      </td>
-                      {isAdmin && (
-                        <td style={{ color: tokens.textPrimary }} className="p-3.5">
-                          {sellerLabel}
-                        </td>
-                      )}
-                      <td style={{ color: tokens.textSecondary }} className="p-3.5">
-                        {formatMeetingSchedule(sale.saleDate, '')}
-                      </td>
-                      <td style={{ color: tokens.textPrimary }} className="p-3.5">
-                        Site • {sale.paymentStructure === '50_50' ? '50/50' : 'Imediato'}
-                      </td>
-                      <td style={{ color: tokens.textPrimary }} className="p-3.5 text-right font-semibold">
-                        {formatCurrencyBRL(sale.value)}
-                      </td>
-                      <td style={{ color: tokens.success }} className="p-3.5 text-right font-semibold">
-                        {formatCurrencyBRL(sale.receivedValue || 0)}
-                      </td>
-                      <td className="p-3.5">
-                        <PwBadge variant={badge.variant} tokens={tokens}>
-                          {badge.label}
-                        </PwBadge>
-                      </td>
-                      <td className="p-3.5 text-right">
-                        <PwButton
-                          size="xs"
-                          variant="secondary"
-                          icon={CreditCard}
-                          onClick={() => openEditModal(sale)}
-                          tokens={tokens}
-                        >
-                          Gerenciar
-                        </PwButton>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </PwCard>
-      )}
-
-      <PwModal
-        isOpen={Boolean(editingSale)}
-        onClose={() => setEditingSale(null)}
-        title={`Controle Financeiro — ${editingSale?.clientName || ''}`}
-        subtitle={`Valor vendido contratado: ${formatCurrencyBRL(editingSale?.value || 0)}`}
-        tokens={tokens}
-      >
-        {editingSale && (
-          <form onSubmit={handleSaveFinancials} className="flex flex-col gap-4">
-            <PwSelect
-              label="Status financeiro"
-              id="edit-sale-status"
-              required
-              value={editStatus}
-              onChange={(e) => setEditStatus(e.target.value)}
-              options={[
-                { value: 'completed', label: 'Concluída' },
-                { value: 'pending_payment', label: 'Pagamento pendente' },
-                { value: 'cancelled', label: 'Cancelada' },
-                { value: 'refunded', label: 'Reembolsada' },
-              ]}
-              tokens={tokens}
-            />
-            <PwInput
-              label="Valor efetivamente recebido (R$)"
-              id="edit-sale-received"
-              type="number"
-              required
-              value={editReceived}
-              onChange={(e) => setEditReceived(e.target.value)}
-              hint={`Máximo permitido: ${formatCurrencyBRL(editingSale.value)}`}
-              tokens={tokens}
-            />
-            <PwInput
-              label="Forma de pagamento"
-              id="edit-sale-method"
-              value={editMethod}
-              onChange={(e) => setEditMethod(e.target.value)}
-              tokens={tokens}
-            />
-            <PwTextarea
-              label="Observações financeiras"
-              id="edit-sale-notes"
-              rows={2}
-              value={editNotes}
-              onChange={(e) => setEditNotes(e.target.value)}
-              tokens={tokens}
-            />
-            <div className="flex justify-end gap-2 pt-2">
-              <PwButton type="button" variant="ghost" onClick={() => setEditingSale(null)} tokens={tokens}>
-                Cancelar
-              </PwButton>
-              <PwButton type="submit" loading={saving} icon={CheckCircle2} tokens={tokens}>
-                Salvar Alterações
-              </PwButton>
-            </div>
-          </form>
-        )}
-      </PwModal>
-    </div>
-  );
-}
-
-/**
- * ============================================================================
- * PÁGINA 5: RELATÓRIOS & OCORRÊNCIAS
- * ============================================================================
- */
-function ReportsPage({ db, currentUser, onInspectRecord, onOpenDossier, tokens }) {
-  const isAdmin = currentUser.role === 'admin';
-  const [typeFilter, setTypeFilter] = useState('all');
-
-  const unifiedFeed = useMemo(() => {
-    const list = [
-      ...db.meetingReports.map((r) => ({ ...r, recordType: 'MEETING_REPORT' })),
-      ...db.noShowOccurrences.map((o) => ({ ...o, recordType: 'NO_SHOW' })),
-      ...db.rescheduleRecords.map((rs) => ({ ...rs, recordType: 'RESCHEDULE' })),
-    ];
-
-    return list
-      .filter((item) => (isAdmin ? true : item.sellerId === currentUser.id))
-      .filter((item) => (typeFilter === 'all' ? true : item.recordType === typeFilter))
-      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  }, [db.meetingReports, db.noShowOccurrences, db.rescheduleRecords, isAdmin, currentUser.id, typeFilter]);
-
-  return (
-    <div className="flex flex-col gap-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 style={{ color: tokens.textPrimary }} className="text-base font-semibold">
-            {isAdmin ? 'Central de Relatórios & Ocorrências' : 'Meus Relatórios & Ocorrências'}
-          </h2>
-          <p style={{ color: tokens.textSecondary }} className="text-xs mt-0.5">
-            Ordenados do mais recente para o mais antigo.
-          </p>
-        </div>
-
-        <div
-          style={{ backgroundColor: tokens.surface, borderColor: tokens.border, borderRadius: 11 }}
-          className="border p-1 flex flex-wrap items-center gap-1"
-        >
-          {[
-            { id: 'all', label: 'Todos' },
-            { id: 'MEETING_REPORT', label: 'Registros de Dados' },
-            { id: 'NO_SHOW', label: 'Vácuos' },
-            { id: 'RESCHEDULE', label: 'Reagendamentos' },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => {
-                soundEngine.playSfx('click');
-                setTypeFilter(tab.id);
-              }}
-              style={{
-                backgroundColor: typeFilter === tab.id ? 'rgba(128, 23, 255, 0.16)' : 'transparent',
-                color: typeFilter === tab.id ? tokens.primary : tokens.textSecondary,
-                borderRadius: 8,
-              }}
-              className="px-3 py-1.5 text-xs font-medium transition-colors"
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {unifiedFeed.length === 0 ? (
-        <PwEmptyState
-          icon={FileSpreadsheet}
-          title="Nenhum registro encontrado"
-          description="Quando uma reunião for concluída, reagendada ou marcada como vácuo, o registro aparecerá aqui."
-          tokens={tokens}
-        />
-      ) : (
-        <div className="flex flex-col gap-3">
-          {unifiedFeed.map((item) => {
-            const client = db.clients.find((c) => c.id === item.clientId);
-            const sellerLabel = dataEngine.resolveUserLabel(db, item.sellerId, item.sellerName);
-            const isReport = item.recordType === 'MEETING_REPORT';
-            const isNoShow = item.recordType === 'NO_SHOW';
-
-            return (
-              <PwCard
-                key={item.id}
-                tokens={tokens}
-                glow={isAdmin && !item.isReadByAdmin}
-                className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-              >
-                <div className="flex flex-col gap-1.5">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <PwBadge
-                      variant={isReport ? 'success' : isNoShow ? 'warning' : 'primary'}
-                      tokens={tokens}
-                    >
-                      {isReport
-                        ? 'Registro dos Dados & Venda'
-                        : isNoShow
-                        ? `Vácuo (${item.reason})`
-                        : 'Reagendamento'}
-                    </PwBadge>
-
-                    {isAdmin && (
-                      <PwBadge variant={item.isReadByAdmin ? 'neutral' : 'error'} tokens={tokens}>
-                        {item.isReadByAdmin ? 'Lido' : 'Não lido'}
-                      </PwBadge>
-                    )}
-
-                    <span style={{ color: tokens.textSecondary }} className="text-[11px]">
-                      {formatSaoPauloDateTime(item.createdAt)}
-                    </span>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2">
-                    <strong style={{ color: tokens.textPrimary }} className="text-sm">
-                      {item.clientName}
-                    </strong>
-                    <span style={{ color: tokens.textSecondary }} className="text-xs">
-                      • Vendedor: {sellerLabel}
-                    </span>
-                  </div>
-
-                  {isReport && item.saleInfo && (
-                    <p style={{ color: tokens.textSecondary }} className="text-xs">
-                      Vendido: <strong style={{ color: tokens.textPrimary }}>{formatCurrencyBRL(item.saleInfo.saleValue)}</strong> • Domínio: <strong style={{ color: tokens.primary }}>{item.sectionC?.domainProvider}</strong>
-                    </p>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-2 shrink-0">
-                  {client && (
-                    <PwButton
-                      size="xs"
-                      variant="secondary"
-                      icon={User}
-                      onClick={() => onOpenDossier(client)}
-                      tokens={tokens}
-                    >
-                      Cliente
-                    </PwButton>
-                  )}
-                  <PwButton
-                    size="xs"
-                    icon={Eye}
-                    onClick={() => onInspectRecord(item)}
-                    tokens={tokens}
-                  >
-                    Abrir Conteúdo
-                  </PwButton>
-                </div>
-              </PwCard>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/**
- * ============================================================================
- * PÁGINA 6: GESTÃO DE USUÁRIOS (EXCLUSIVO ADMINISTRADOR)
- * ============================================================================
- */
-function UsersManagementPage({ db, currentUser, onRefresh, showToast, tokens }) {
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [creating, setCreating] = useState(false);
-
-  const [deleteTarget, setDeleteTarget] = useState(null);
-  const [transferToSellerId, setTransferToSellerId] = useState('');
-  const [deleting, setDeleting] = useState(false);
-
-  if (currentUser.role !== 'admin') {
-    return (
-      <PwEmptyState
-        icon={Shield}
-        title="Acesso Restrito ao Administrador"
-        description="Seu perfil de vendedor não possui autorização para gerenciar contas."
-        tokens={tokens}
-      />
-    );
-  }
-
-  const handleAddSeller = async (e) => {
-    e.preventDefault();
-    setCreating(true);
-    const res = await dataEngine.createSellerAccount({
-      name,
-      email,
-      password,
-      createdBy: currentUser.email,
-    });
-    setCreating(false);
-
-    if (!res.ok) {
-      soundEngine.playSfx('error');
-      showToast('error', 'Erro ao adicionar vendedor', res.message);
-      return;
-    }
-
-    soundEngine.playSfx('success');
-    showToast('success', 'Vendedor adicionado', `${res.user.name} criado com perfil de Vendedor.`);
-    setName('');
-    setEmail('');
-    setPassword('');
-    onRefresh();
-  };
-
-  const handleToggleStatus = (user) => {
-    const nextStatus = user.status === 'active' ? 'inactive' : 'active';
-    const res = dataEngine.setUserStatus(currentUser, user.id, nextStatus);
-    if (!res.ok) {
-      soundEngine.playSfx('error');
-      showToast('error', 'Operação bloqueada', res.message);
-      return;
-    }
-    soundEngine.playSfx('warning');
-    showToast(
-      'info',
-      nextStatus === 'inactive' ? 'Conta desativada' : 'Conta reativada',
-      `O status de ${user.email} foi atualizado e sincronizado imediatamente.`
-    );
-    onRefresh();
-  };
-
-  const handleConfirmDelete = (e) => {
-    e.preventDefault();
-    if (!deleteTarget) return;
-    setDeleting(true);
-    const res = dataEngine.deleteUserAccount(currentUser, deleteTarget.id, transferToSellerId);
-    setDeleting(false);
-
-    if (!res.ok) {
-      soundEngine.playSfx('error');
-      showToast('error', 'Erro ao excluir conta', res.message);
-      return;
-    }
-
-    soundEngine.playSfx('warning');
-    showToast(
-      'success',
-      'Conta excluída com preservação histórica',
-      `A conta foi encerrada e ${res.transferredCount} cliente(s) em andamento foram transferidos.`
-    );
-    setDeleteTarget(null);
-    setTransferToSellerId('');
-    onRefresh();
-  };
-
-  const otherActiveSellers = db.users.filter(
-    (u) => u.role === 'seller' && u.status === 'active' && u.id !== deleteTarget?.id
-  );
-
-  return (
-    <div className="flex flex-col gap-6">
-      <PwCard tokens={tokens} className="p-5">
-        <h3 style={{ color: tokens.textPrimary }} className="text-sm font-semibold mb-1">
-          Adicionar Nova Conta de Vendedor
-        </h3>
-        <p style={{ color: tokens.textSecondary }} className="text-xs mb-4">
-          Todas as novas contas recebem automaticamente o perfil de Vendedor, com isolamento de carteira.
-        </p>
-
-        <form onSubmit={handleAddSeller} className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
-          <PwInput
-            label="Nome completo"
-            id="usr-name"
-            required
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Nome do vendedor"
-            tokens={tokens}
-          />
-          <PwInput
-            label="E-mail corporativo"
-            id="usr-email"
-            type="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="vendedor@pontoweb.com"
-            tokens={tokens}
-          />
-          <PwInput
-            label="Senha inicial (mín. 8 caracteres)"
-            id="usr-pass"
-            type="password"
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="••••••••"
-            tokens={tokens}
-          />
-          <PwButton type="submit" loading={creating} icon={UserPlus} tokens={tokens}>
-            Adicionar Vendedor
-          </PwButton>
-        </form>
-      </PwCard>
-
-      <PwCard tokens={tokens} className="overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr style={{ borderColor: tokens.border, color: tokens.textSecondary }} className="border-b">
-                <th className="p-3.5 font-medium">Usuário</th>
-                <th className="p-3.5 font-medium">Perfil</th>
-                <th className="p-3.5 font-medium">Status</th>
-                <th className="p-3.5 font-medium">Criado em</th>
-                <th className="p-3.5 font-medium text-right">Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {db.users.map((u) => {
-                const isSelf = u.id === currentUser.id;
-                const isDeleted = u.status === 'deleted';
-
-                return (
-                  <tr
-                    key={u.id}
-                    style={{ borderColor: tokens.border }}
-                    className="border-b last:border-b-0"
-                  >
-                    <td className="p-3.5">
-                      <strong style={{ color: tokens.textPrimary }} className="block">
-                        {u.status === 'deleted' ? `${u.name} (conta excluída)` : u.name}
-                      </strong>
-                      <span style={{ color: tokens.textSecondary }} className="text-[11px]">
-                        {u.email}
-                      </span>
-                    </td>
-                    <td className="p-3.5">
-                      <PwBadge variant={u.role === 'admin' ? 'primary' : 'neutral'} tokens={tokens}>
-                        {u.role === 'admin' ? 'Administrador' : 'Vendedor'}
-                      </PwBadge>
-                    </td>
-                    <td className="p-3.5">
-                      <PwBadge
-                        variant={
-                          u.status === 'active'
-                            ? 'success'
-                            : u.status === 'inactive'
-                            ? 'warning'
-                            : 'error'
-                        }
-                        tokens={tokens}
-                      >
-                        {u.status === 'active'
-                          ? 'Ativa'
-                          : u.status === 'inactive'
-                          ? 'Desativada'
-                          : 'Excluída'}
-                      </PwBadge>
-                    </td>
-                    <td style={{ color: tokens.textSecondary }} className="p-3.5">
-                      {formatSaoPauloDateTime(u.createdAt)}
-                    </td>
-                    <td className="p-3.5 text-right">
-                      {isSelf ? (
-                        <span style={{ color: tokens.textSecondary }} className="text-[11px]">
-                          Conta atual protegida
-                        </span>
-                      ) : isDeleted ? (
-                        <span style={{ color: tokens.textSecondary }} className="text-[11px]">
-                          Histórico preservado
-                        </span>
-                      ) : (
-                        <div className="inline-flex items-center gap-2">
-                          <PwButton
-                            size="xs"
-                            variant="secondary"
-                            icon={u.status === 'active' ? UserMinus : UserCheck}
-                            onClick={() => handleToggleStatus(u)}
-                            tokens={tokens}
-                          >
-                            {u.status === 'active' ? 'Desativar' : 'Reativar'}
-                          </PwButton>
-
-                          <PwButton
-                            size="xs"
-                            variant="danger"
-                            icon={Trash2}
-                            onClick={() => {
-                              setDeleteTarget(u);
-                              setTransferToSellerId('');
-                            }}
-                            tokens={tokens}
-                          >
-                            Excluir
-                          </PwButton>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </PwCard>
-
-      <PwModal
-        isOpen={Boolean(deleteTarget)}
-        onClose={() => setDeleteTarget(null)}
-        title={`Confirmar Exclusão de Conta — ${deleteTarget?.name || ''}`}
-        subtitle="O acesso será encerrado permanentemente e todos os relatórios, reuniões e vendas anteriores permanecerão íntegros com a identificação '(conta excluída)'."
-        tokens={tokens}
-      >
-        {deleteTarget && (
-          <form onSubmit={handleConfirmDelete} className="flex flex-col gap-4">
-            <PwSelect
-              label="Transferir clientes em andamento para outro vendedor ativo (opcional)"
-              id="del-transfer"
-              value={transferToSellerId}
-              onChange={(e) => setTransferToSellerId(e.target.value)}
-              options={[
-                { value: '', label: 'Não transferir agora (manter vínculo histórico)' },
-                ...otherActiveSellers.map((s) => ({
-                  value: s.id,
-                  label: `${s.name} (${s.email})`,
-                })),
-              ]}
-              tokens={tokens}
-            />
-
-            <div className="flex justify-end gap-2 pt-2">
-              <PwButton type="button" variant="ghost" onClick={() => setDeleteTarget(null)} tokens={tokens}>
-                Cancelar
-              </PwButton>
-              <PwButton type="submit" variant="danger" loading={deleting} icon={Trash2} tokens={tokens}>
-                Confirmar Exclusão Permanente
-              </PwButton>
-            </div>
-          </form>
-        )}
-      </PwModal>
-    </div>
-  );
-}
-
-/**
- * ============================================================================
- * PÁGINA 7: CONFIGURAÇÕES (TEMA + ÁUDIO YOUTUBE LOOP + TIMBRES OLD MONEY)
- * ============================================================================
- */
-function SettingsPage({
-  theme,
-  onToggleTheme,
-  musicPlaying,
-  onToggleMusic,
-  musicVolume,
-  onMusicVolumeChange,
-  sfxEnabled,
-  onToggleSfx,
-  sfxVolume,
-  onSfxVolumeChange,
-  tokens,
-}) {
-  return (
-    <div className="flex flex-col gap-5 max-w-3xl">
-      <PwCard tokens={tokens} className="p-5 flex items-center justify-between gap-4">
-        <div>
-          <h3 style={{ color: tokens.textPrimary }} className="text-sm font-semibold">
-            Aparência & Tema Institucional
-          </h3>
-          <p style={{ color: tokens.textSecondary }} className="text-xs mt-1">
-            Modo Escuro (#080808 + Neon Roxo #8017FF) como padrão executivo ou Modo Claro.
-          </p>
-        </div>
-        <PwButton
-          variant="secondary"
-          icon={theme === 'dark' ? Sun : Moon}
-          onClick={onToggleTheme}
-          tokens={tokens}
-        >
-          {theme === 'dark' ? 'Alternar para Claro' : 'Alternar para Escuro'}
-        </PwButton>
-      </PwCard>
-
-      <PwCard tokens={tokens} className="p-5 flex flex-col gap-5">
-        <div>
-          <h3 style={{ color: tokens.textPrimary }} className="text-sm font-semibold">
-            Identidade Sonora — Trilha Ambiente (Loop) & Efeitos Old Money
-          </h3>
-          <p style={{ color: tokens.textSecondary }} className="text-xs mt-1">
-            Reprodução contínua em loop (22:45 min) e efeitos sonoros executivos de precisão sem sobreposição.
-          </p>
-        </div>
-
-        <div
-          style={{ backgroundColor: tokens.bg, borderColor: tokens.border, borderRadius: 11 }}
-          className="border p-4 flex flex-col gap-3"
-        >
-          <div className="flex items-center justify-between">
-            <span style={{ color: tokens.textPrimary }} className="text-xs font-semibold">
-              Música de Fundo em Loop
-            </span>
-            <PwButton
-              size="xs"
-              variant={musicPlaying ? 'primary' : 'secondary'}
-              icon={musicPlaying ? Pause : Play}
-              onClick={onToggleMusic}
-              tokens={tokens}
-            >
-              {musicPlaying ? 'Pausar Música' : 'Iniciar Música'}
-            </PwButton>
-          </div>
-          <div className="flex items-center gap-3">
-            <span style={{ color: tokens.textSecondary }} className="text-xs w-28">
-              Volume ({Math.round(musicVolume * 100)}%)
-            </span>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.02"
-              value={musicVolume}
-              onChange={(e) => onMusicVolumeChange(parseFloat(e.target.value))}
-              className="flex-1 accent-[#8017FF]"
-            />
-          </div>
-        </div>
-
-        <div
-          style={{ backgroundColor: tokens.bg, borderColor: tokens.border, borderRadius: 11 }}
-          className="border p-4 flex flex-col gap-3"
-        >
-          <div className="flex items-center justify-between">
-            <span style={{ color: tokens.textPrimary }} className="text-xs font-semibold">
-              Efeitos Sonoros de Interação (Executive / Old Money)
-            </span>
-            <PwButton
-              size="xs"
-              variant={sfxEnabled ? 'primary' : 'secondary'}
-              icon={sfxEnabled ? Volume2 : VolumeX}
-              onClick={onToggleSfx}
-              tokens={tokens}
-            >
-              {sfxEnabled ? 'Efeitos Ativos' : 'Efeitos Silenciados'}
-            </PwButton>
-          </div>
-          <div className="flex items-center gap-3">
-            <span style={{ color: tokens.textSecondary }} className="text-xs w-28">
-              Volume ({Math.round(sfxVolume * 100)}%)
-            </span>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.02"
-              value={sfxVolume}
-              onChange={(e) => onSfxVolumeChange(parseFloat(e.target.value))}
-              className="flex-1 accent-[#8017FF]"
-            />
-          </div>
-
-          <div className="pt-2 flex flex-wrap gap-2">
-            {[
-              { id: 'click', label: '1. Clique Preciso' },
-              { id: 'success', label: '2. Ação Concluída' },
-              { id: 'notification', label: '3. Notificação Cristal' },
-              { id: 'modal', label: '4. Abertura de Modal' },
-              { id: 'error', label: '5. Erro Institucional' },
-              { id: 'warning', label: '6. Aviso Discreto' },
-            ].map((sfx) => (
-              <button
-                key={sfx.id}
-                type="button"
-                onClick={() => soundEngine.playSfx(sfx.id)}
-                style={{
-                  backgroundColor: tokens.surface,
-                  borderColor: tokens.border,
-                  color: tokens.textPrimary,
-                  borderRadius: 9,
-                }}
-                className="border px-3 py-1.5 text-xs hover:border-[#8017FF] transition-colors"
-              >
-                {sfx.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      </PwCard>
-    </div>
-  );
-}
-
-/**
- * ============================================================================
- * SHELL AUTENTICADO PRINCIPAL
- * ============================================================================
- */
-function AuthenticatedShell({
-  currentUser,
-  theme,
-  onToggleTheme,
-  onLogout,
-  showToast,
-  tokens,
-}) {
-  const [db, setDb] = useState(() => dataEngine.getDb());
-  const [activePage, setActivePage] = useState('dashboard');
-  const [clientsFilterPreset, setClientsFilterPreset] = useState('all');
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [notifOpen, setNotifOpen] = useState(false);
-
-  const [musicPlaying, setMusicPlaying] = useState(soundEngine.isMusicPlaying);
-  const [musicVolume, setMusicVolume] = useState(soundEngine.musicVolume);
-  const [sfxEnabled, setSfxEnabled] = useState(soundEngine.sfxEnabled);
-  const [sfxVolume, setSfxVolume] = useState(soundEngine.sfxVolume);
-
-  // Modais globais
-  const [reassignClientObj, setReassignClientObj] = useState(null);
-  const [reassignTargetSellerId, setReassignTargetSellerId] = useState('');
-  const [rVentasClient, setRVendasClient] = useState(null);
-  const [dossierClientId, setDossierClientId] = useState(null);
-  const [inspectedRecord, setInspectedRecord] = useState(null);
-
-  const refreshDb = useCallback(() => {
-    setDb(dataEngine.getDb());
-  }, []);
-
-  useEffect(() => {
-    const handleStorage = (e) => {
-      if (e.key === DB_KEY || e.key === 'pontoweb_crm_last_sync') {
-        refreshDb();
-        dataEngine.validateSession().then((check) => {
-          if (!check.valid) {
-            soundEngine.playSfx('error');
-            showToast('error', 'Sessão encerrada', check.message || 'Sua sessão não é mais válida.');
-            onLogout(false);
-          }
-        });
-      }
-    };
-    window.addEventListener('storage', handleStorage);
-
-    let channel = null;
-    if (typeof BroadcastChannel !== 'undefined') {
-      channel = new BroadcastChannel(CHANNEL_NAME);
-      channel.onmessage = () => {
-        refreshDb();
-        dataEngine.validateSession().then((check) => {
-          if (!check.valid) {
-            soundEngine.playSfx('error');
-            showToast('error', 'Sessão encerrada', check.message || 'Sua sessão não é mais válida.');
-            onLogout(false);
-          }
-        });
-      };
-    }
-
-    return () => {
-      window.removeEventListener('storage', handleStorage);
-      if (channel) channel.close();
-    };
-  }, [refreshDb, onLogout, showToast]);
-
-  const handleNavigate = (pageId, opts = {}) => {
-    soundEngine.playSfx('click');
-    if (pageId === 'clients') {
-      setClientsFilterPreset(opts.status || 'all');
-    }
-    setActivePage(pageId);
-    setMobileMenuOpen(false);
-  };
-
-  const handleToggleMusic = async () => {
-    soundEngine.playSfx('click');
-    if (musicPlaying) {
-      soundEngine.stopMusic();
-      setMusicPlaying(false);
-    } else {
-      await soundEngine.startMusic();
-      setMusicPlaying(true);
-    }
-  };
-
-  const handleConfirmFirstContact = (clientId) => {
-    const res = dataEngine.confirmFirstContact(currentUser, clientId);
-    if (!res.ok) {
-      soundEngine.playSfx('error');
-      showToast('error', 'Erro no registro', res.message);
-      return;
-    }
-    if (!res.alreadyCompleted) {
-      soundEngine.playSfx('success');
-      showToast(
-        'success',
-        'WhatsApp confirmado!',
-        '2ª pendência liberada: realize a Reunião de Vendas e clique em "Já fiz".'
-      );
-    }
-    refreshDb();
-  };
-
-  const handleOpenReassign = (client) => {
-    setReassignClientObj(client);
-    const otherSeller = db.users.find(
-      (u) => u.role === 'seller' && u.status === 'active' && u.id !== client.assignedSellerId
-    );
-    setReassignTargetSellerId(otherSeller?.id || '');
-  };
-
-  const handleConfirmReassign = (e) => {
-    e.preventDefault();
-    if (!reassignClientObj) return;
-    const res = dataEngine.reassignClient(currentUser, reassignClientObj.id, reassignTargetSellerId);
-    if (!res.ok) {
-      soundEngine.playSfx('error');
-      showToast('error', 'Erro na reatribuição', res.message);
-      return;
-    }
-    soundEngine.playSfx('success');
-    showToast('success', 'Cliente reatribuído', 'Carteira atualizada e novo responsável notificado.');
-    setReassignClientObj(null);
-    refreshDb();
-  };
-
-  const handleInspectRecord = (record) => {
-    if (currentUser.role === 'admin' && !record.isReadByAdmin) {
-      dataEngine.markReportRecordAsRead(currentUser, record.recordType, record.id);
-      refreshDb();
-    }
-    setInspectedRecord(record);
-  };
-
-  const myNotifications = useMemo(
-    () => db.notifications.filter((n) => n.userId === currentUser.id),
-    [db.notifications, currentUser.id]
-  );
-  const unreadNotifCount = myNotifications.filter((n) => !n.read).length;
-
-  const navItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'clients', label: 'Clientes e contatos', icon: Users },
-    { id: 'meetings', label: 'Reuniões de vendas', icon: Calendar },
-    { id: 'sales', label: 'Vendas', icon: DollarSign },
-    { id: 'reports', label: 'Relatórios', icon: FileSpreadsheet },
-    ...(currentUser.role === 'admin' ? [{ id: 'users', label: 'Usuários', icon: Shield }] : []),
-    { id: 'settings', label: 'Configurações', icon: Settings },
-  ];
-
-  const pageTitles = {
-    dashboard: 'Dashboard Operacional',
-    clients: 'Clientes e Contatos',
-    meetings: 'Reuniões de Vendas',
-    sales: 'Vendas & Controle Financeiro',
-    reports: 'Relatórios & Ocorrências',
-    users: 'Gestão de Usuários',
-    settings: 'Configurações do Sistema',
-  };
-
-  const activeDossierClient = dossierClientId
-    ? db.clients.find((c) => c.id === dossierClientId) || null
-    : null;
-
-  const rVentasMeeting = rVentasClient
-    ? db.meetings.find((m) => m.id === rVentasClient.activeMeetingId) || null
-    : null;
-
-  return (
-    <div
-      style={{ backgroundColor: tokens.bg, color: tokens.textPrimary }}
-      className="min-h-screen flex flex-col lg:flex-row"
-    >
-      {/* Sidebar Desktop & Mobile */}
-      <aside
-        style={{
-          backgroundColor: tokens.surface,
-          borderColor: tokens.border,
-        }}
-        className={`fixed inset-y-0 left-0 z-40 w-64 border-r flex flex-col justify-between p-4 transition-transform duration-200 lg:static lg:translate-x-0 ${
-          mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
-      >
-        <div className="flex flex-col gap-6">
-          <div className="flex items-center justify-between px-1 pt-1">
-            <PontoWebLogo size={34} showSubtitle tokens={tokens} />
-            <button
-              type="button"
-              onClick={() => setMobileMenuOpen(false)}
-              style={{ color: tokens.textSecondary }}
-              className="lg:hidden p-1.5"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-
-          <nav className="flex flex-col gap-1">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = activePage === item.id;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => handleNavigate(item.id)}
-                  style={{
-                    backgroundColor: isActive ? 'rgba(128, 23, 255, 0.16)' : 'transparent',
-                    color: isActive ? tokens.primary : tokens.textSecondary,
-                    borderColor: isActive ? 'rgba(128, 23, 255, 0.35)' : 'transparent',
-                    borderRadius: 11,
-                  }}
-                  className="w-full flex items-center gap-3 px-3.5 py-2.5 text-xs font-medium border transition-all text-left hover:opacity-90"
-                >
-                  <Icon className="w-4 h-4 shrink-0" />
-                  <span>{item.label}</span>
-                </button>
-              );
-            })}
-          </nav>
-        </div>
-
-        <div style={{ borderColor: tokens.border }} className="pt-4 border-t flex flex-col gap-3">
-          <div
-            style={{ backgroundColor: tokens.bg, borderColor: tokens.border, borderRadius: 11 }}
-            className="border p-3 flex items-center gap-2.5"
-          >
-            <div
-              style={{
-                backgroundColor: 'rgba(128, 23, 255, 0.16)',
-                color: tokens.primary,
-                borderRadius: 9,
-              }}
-              className="w-8 h-8 flex items-center justify-center font-semibold text-xs shrink-0"
-            >
-              {currentUser.name.slice(0, 2).toUpperCase()}
-            </div>
-            <div className="min-w-0 flex-1">
-              <p style={{ color: tokens.textPrimary }} className="text-xs font-semibold truncate">
-                {currentUser.name}
-              </p>
-              <span style={{ color: tokens.textSecondary }} className="text-[10px] uppercase tracking-wider">
-                {currentUser.role === 'admin' ? 'Administrador' : 'Vendedor'}
-              </span>
-            </div>
-          </div>
-
-          <PwButton
-            variant="secondary"
-            size="sm"
-            icon={LogOut}
-            onClick={() => onLogout(true)}
-            tokens={tokens}
-            className="w-full"
-          >
-            Sair do Sistema
-          </PwButton>
-        </div>
-      </aside>
-
-      {/* Conteúdo Principal */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Header Executivo */}
-        <header
-          style={{ backgroundColor: tokens.surface, borderColor: tokens.border }}
-          className="sticky top-0 z-30 border-b px-4 sm:px-6 py-3.5 flex items-center justify-between gap-3"
-        >
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => {
-                soundEngine.playSfx('click');
-                setMobileMenuOpen(true);
-              }}
-              style={{
-                backgroundColor: tokens.bg,
-                borderColor: tokens.border,
-                color: tokens.textPrimary,
-                borderRadius: 10,
-              }}
-              className="lg:hidden border p-2"
-            >
-              <Layers className="w-4 h-4" />
-            </button>
-
-            <div>
-              <h1 style={{ color: tokens.textPrimary, letterSpacing: '0.08em' }} className="text-base sm:text-lg font-semibold">
-                {pageTitles[activePage]}
-              </h1>
-              <div className="flex items-center gap-2 text-[11px]" style={{ color: tokens.textSecondary }}>
-                <span className="inline-flex items-center gap-1 text-[#16845B]">
-                  <Wifi className="w-3 h-3" /> Tempo real ativo
-                </span>
-                <span>•</span>
-                <span>America/Sao_Paulo</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {/* Controle Rápido Música Ambiente */}
-            <button
-              type="button"
-              onClick={handleToggleMusic}
-              title={musicPlaying ? 'Pausar música ambiente' : 'Tocar música ambiente em loop'}
-              style={{
-                backgroundColor: musicPlaying ? 'rgba(128, 23, 255, 0.16)' : tokens.bg,
-                borderColor: musicPlaying ? tokens.primary : tokens.border,
-                color: musicPlaying ? tokens.primary : tokens.textSecondary,
-                borderRadius: 10,
-              }}
-              className="border p-2 flex items-center gap-1.5 text-xs font-medium"
-            >
-              {musicPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-              <span className="hidden md:inline">{musicPlaying ? 'Som Ativo' : 'Música'}</span>
-            </button>
-
-            {/* Alternar Tema */}
-            <button
-              type="button"
-              onClick={() => {
-                soundEngine.playSfx('click');
-                onToggleTheme();
-              }}
-              title="Alternar tema"
-              style={{
-                backgroundColor: tokens.bg,
-                borderColor: tokens.border,
-                color: tokens.textPrimary,
-                borderRadius: 10,
-              }}
-              className="border p-2"
-            >
-              {theme === 'dark' ? <Sun className="w-4 h-4 text-[#EDE0FF]" /> : <Moon className="w-4 h-4 text-[#8017FF]" />}
-            </button>
-
-            {/* Central de Notificações */}
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => {
-                  soundEngine.playSfx('click');
-                  setNotifOpen((v) => !v);
-                }}
-                style={{
-                  backgroundColor: tokens.bg,
-                  borderColor: tokens.border,
-                  color: tokens.textPrimary,
-                  borderRadius: 10,
-                }}
-                className="border p-2 relative"
-              >
-                <Bell className="w-4 h-4" />
-                {unreadNotifCount > 0 && (
-                  <span
-                    style={{ backgroundColor: tokens.primary }}
-                    className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full text-[10px] font-bold text-white flex items-center justify-center"
-                  >
-                    {unreadNotifCount > 9 ? '9+' : unreadNotifCount}
-                  </span>
-                )}
-              </button>
-
-              {notifOpen && (
-                <div
-                  style={{
-                    backgroundColor: tokens.surfaceElevated,
-                    borderColor: tokens.border,
-                    boxShadow: tokens.glowStrong,
-                    borderRadius: 13,
-                  }}
-                  className="absolute right-0 mt-2 w-80 sm:w-96 border p-4 z-50"
-                >
-                  <div className="flex items-center justify-between mb-3">
-                    <span style={{ color: tokens.textPrimary }} className="text-xs font-semibold">
-                      Notificações ({unreadNotifCount} não lidas)
-                    </span>
-                    {unreadNotifCount > 0 && (
                       <button
                         type="button"
-                        onClick={() => {
-                          dataEngine.markNotificationAsRead(currentUser.id);
-                          refreshDb();
-                        }}
-                        style={{ color: tokens.primary }}
-                        className="text-[11px] font-medium hover:underline"
+                        onClick={() => onOpenDossier(client.id)}
+                        className="text-base font-semibold hover:underline text-left"
                       >
-                        Marcar todas como lidas
+                        {client.name}
                       </button>
+                      <p className="text-xs opacity-70">{client.segment}</p>
+                    </div>
+                    {user.role === 'admin' && (
+                      <Badge tone="primary">{getUserDisplayName(db.users, client.assignedSellerId)}</Badge>
                     )}
                   </div>
 
-                  {myNotifications.length === 0 ? (
-                    <p style={{ color: tokens.textSecondary }} className="text-xs py-4 text-center">
-                      Nenhuma notificação no momento.
+                  <div className="text-xs space-y-1 opacity-85">
+                    <div>
+                      WhatsApp:{' '}
+                      <a
+                        href={`https://wa.me/${cleanWa}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="underline font-medium"
+                        style={{ color: '#2AC78E' }}
+                      >
+                        {client.whatsapp}
+                      </a>
+                    </div>
+                    <div>
+                      Call:{' '}
+                      <strong>
+                        {mtg ? formatDateWithWeekdayBR(mtg.scheduledDate, mtg.scheduledTime) : 'Não agendada'}
+                      </strong>
+                    </div>
+                    <div>
+                      Status 1º Contato:{' '}
+                      {client.firstContactStatus === 'done' ? (
+                        <span style={{ color: '#2AC78E' }}>
+                          Realizado por {getUserDisplayName(db.users, client.firstContactById)} em{' '}
+                          {formatDateTimeBR(client.firstContactAt)}
+                        </span>
+                      ) : (
+                        <span style={{ color: '#F2B450' }}>Pendente pelo vendedor</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 pt-2 border-t" style={{ borderColor: tokens.border }}>
+                  <Button size="sm" variant="primary" onClick={() => onOpenMeetingModal(client)}>
+                    R. Vendas
+                  </Button>
+                  <Button size="sm" variant="secondary" onClick={() => onOpenDossier(client.id)}>
+                    Dossiê
+                  </Button>
+                  {user.role === 'admin' && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        setReassignClientObj(client);
+                        setTargetSellerId('');
+                      }}
+                    >
+                      Transferir
+                    </Button>
+                  )}
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Modal Cadastro de Cliente pelo Pablo */}
+      <Modal
+        open={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        title="Cadastrar e Distribuir Cliente"
+        subtitle="A distribuição cria automaticamente a tarefa de primeiro contato e a Reunião de Vendas única no fuso America/Sao_Paulo."
+      >
+        <form onSubmit={handleCreateClient} className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <InputField
+              label="Nome do cliente"
+              required
+              placeholder="Ex: Maria, Gabriel..."
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+            />
+            <InputField
+              label="Segmento da empresa"
+              required
+              placeholder="Ex: Advocacia, Estética..."
+              value={form.segment}
+              onChange={(e) => setForm({ ...form, segment: e.target.value })}
+            />
+            <InputField
+              label="WhatsApp com código do país"
+              required
+              placeholder="+55 11 99999-9999"
+              value={form.whatsapp}
+              onChange={(e) => setForm({ ...form, whatsapp: e.target.value })}
+            />
+            <SelectField
+              label="Vendedor responsável"
+              required
+              value={form.sellerId}
+              onChange={(e) => setForm({ ...form, sellerId: e.target.value })}
+            >
+              <option value="">Selecione um vendedor ativo</option>
+              {activeSellers.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name} ({s.email})
+                </option>
+              ))}
+            </SelectField>
+            <InputField
+              label="Data da reunião de vendas"
+              type="date"
+              required
+              value={form.meetingDate}
+              onChange={(e) => setForm({ ...form, meetingDate: e.target.value })}
+            />
+            <InputField
+              label="Horário da reunião"
+              type="time"
+              required
+              value={form.meetingTime}
+              onChange={(e) => setForm({ ...form, meetingTime: e.target.value })}
+            />
+          </div>
+          <TextAreaField
+            label="Observações (opcional)"
+            rows={3}
+            value={form.notes}
+            onChange={(e) => setForm({ ...form, notes: e.target.value })}
+          />
+          <div className="flex justify-end gap-3">
+            <Button variant="secondary" onClick={() => setShowCreateModal(false)}>
+              Cancelar
+            </Button>
+            <Button type="submit" variant="primary">
+              <Send className="w-4 h-4" />
+              <span>Enviar</span>
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal Reatribuição pelo Pablo */}
+      <Modal
+        open={!!reassignClientObj}
+        onClose={() => setReassignClientObj(null)}
+        title="Transferir Cliente para Outro Vendedor"
+        subtitle="Todo o histórico anterior será preservado."
+      >
+        <form onSubmit={handleReassign} className="space-y-4">
+          <SelectField
+            label="Novo vendedor responsável"
+            required
+            value={targetSellerId}
+            onChange={(e) => setTargetSellerId(e.target.value)}
+          >
+            <option value="">Selecione o vendedor de destino</option>
+            {activeSellers
+              .filter((s) => s.id !== reassignClientObj?.assignedSellerId)
+              .map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name} ({s.email})
+                </option>
+              ))}
+          </SelectField>
+          <div className="flex justify-end gap-3">
+            <Button variant="secondary" onClick={() => setReassignClientObj(null)}>
+              Cancelar
+            </Button>
+            <Button type="submit" variant="primary">
+              Confirmar Transferência
+            </Button>
+          </div>
+        </form>
+      </Modal>
+    </div>
+  );
+}
+
+// ============================================================================
+// 14. PÁGINA: REUNIÕES DE VENDAS (MÓDULO ÚNICO)
+// ============================================================================
+function MeetingsPage({ onOpenMeetingModal, onOpenDossier }) {
+  const { user, db, tokens } = useApp();
+  const visibleMeetings = db.meetings.filter((m) =>
+    user.role === 'admin' ? true : m.sellerId === user.id
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-base font-semibold">Reuniões de Vendas (Call Única: Qualificação + Oferta)</h2>
+          <p className="text-xs opacity-70">
+            Cada cliente possui um único agendamento vigente que reúne diagnóstico e negociação.
+          </p>
+        </div>
+      </div>
+
+      {visibleMeetings.length === 0 ? (
+        <EmptyState
+          icon={Calendar}
+          title="Nenhuma reunião agendada"
+          description="As reuniões são criadas automaticamente na distribuição dos clientes."
+        />
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {visibleMeetings.map((mtg) => {
+            const client = db.clients.find((c) => c.id === mtg.clientId);
+            if (!client) return null;
+            return (
+              <Card key={mtg.id} className="p-5 flex items-center justify-between gap-4">
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onOpenDossier(client.id)}
+                      className="text-sm font-semibold hover:underline"
+                    >
+                      {client.name}
+                    </button>
+                    {mtg.status === 'completed' ? (
+                      <Badge tone="success">Realizada</Badge>
+                    ) : mtg.status === 'no_show' ? (
+                      <Badge tone="error">Vácuo</Badge>
+                    ) : (
+                      <Badge tone="primary">Agendada</Badge>
+                    )}
+                  </div>
+                  <p className="opacity-75">
+                    {formatDateWithWeekdayBR(mtg.scheduledDate, mtg.scheduledTime)}
+                  </p>
+                  {user.role === 'admin' && (
+                    <p className="opacity-65">
+                      Responsável: <strong>{getUserDisplayName(db.users, mtg.sellerId)}</strong>
                     </p>
-                  ) : (
-                    <div className="flex flex-col gap-2 max-h-72 overflow-y-auto">
-                      {myNotifications.slice(0, 15).map((n) => (
-                        <div
-                          key={n.id}
-                          onClick={() => {
-                            dataEngine.markNotificationAsRead(currentUser.id, n.id);
-                            refreshDb();
-                          }}
-                          style={{
-                            backgroundColor: n.read ? tokens.bg : 'rgba(128, 23, 255, 0.1)',
-                            borderColor: n.read ? tokens.border : 'rgba(128, 23, 255, 0.35)',
-                            borderRadius: 10,
-                          }}
-                          className="border p-2.5 text-xs cursor-pointer"
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <strong style={{ color: tokens.textPrimary }}>{n.title}</strong>
-                            <span style={{ color: tokens.textSecondary }} className="text-[10px]">
-                              {formatSaoPauloDateTime(n.createdAt)}
-                            </span>
-                          </div>
-                          <p style={{ color: tokens.textSecondary }} className="text-[11px] mt-0.5">
-                            {n.message}
-                          </p>
-                        </div>
-                      ))}
+                  )}
+                </div>
+
+                <Button size="sm" variant="primary" onClick={() => onOpenMeetingModal(client)}>
+                  R. Vendas
+                </Button>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// 15. PÁGINA: RELATÓRIOS & OCORRÊNCIAS (COM OS 3 BOTÕES DO PABLO NAS VENDAS)
+// ============================================================================
+function ReportsPage({ onOpenDossier }) {
+  const { user, db, tokens, notify } = useApp();
+  const [selectedItem, setSelectedItem] = useState(null);
+
+  const items = useMemo(() => {
+    const list = [];
+    db.meetingReports.forEach((r) => {
+      if (user.role === 'seller' && r.sellerId !== user.id) return;
+      list.push({ kind: 'report', data: r, createdAt: r.createdAt });
+    });
+    db.noShowOccurrences.forEach((o) => {
+      if (user.role === 'seller' && o.sellerId !== user.id) return;
+      list.push({ kind: 'no_show', data: o, createdAt: o.createdAt });
+    });
+    db.rescheduleRecords.forEach((r) => {
+      if (user.role === 'seller' && r.sellerId !== user.id) return;
+      list.push({ kind: 'reschedule', data: r, createdAt: r.createdAt });
+    });
+    return list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  }, [db, user]);
+
+  const handleOpenItem = (item) => {
+    setSelectedItem(item);
+    if (user.role === 'admin' && !item.data.readByAdmin) {
+      dataEngine.markReportItemRead(user, item.kind, item.data.id);
+    }
+  };
+
+  const handlePabloDecision = (saleId, decision) => {
+    try {
+      dataEngine.validateReportedSaleByPablo(user, saleId, decision);
+      if (decision === 'not_sold') {
+        soundEngine.playSfx('warning');
+        notify('Marcado como Não Vendido (oculto para o SDR).', 'warning');
+      } else if (decision === 'confirmed_sdr') {
+        soundEngine.playSfx('success');
+        notify('Venda SDR confirmada! Notificada ao SDR (US$ 50 Wix).', 'success');
+      } else {
+        soundEngine.playSfx('success');
+        notify('Venda Vercel confirmada para Pablo e vendedor.', 'success');
+      }
+    } catch (err) {
+      soundEngine.playSfx('error');
+      notify(err.message, 'error');
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {items.length === 0 ? (
+        <EmptyState
+          icon={FileText}
+          title="Nenhum relatório ou ocorrência registrada"
+          description="Os relatórios das reuniões de vendas, vácuos e reagendamentos aparecerão aqui em tempo real."
+        />
+      ) : (
+        <div className="space-y-3">
+          {items.map((item) => {
+            const client = db.clients.find((c) => c.id === item.data.clientId);
+            const linkedSale =
+              item.kind === 'report' && item.data.saleId
+                ? db.sales.find((s) => s.id === item.data.saleId)
+                : null;
+
+            return (
+              <Card
+                key={`${item.kind}_${item.data.id}`}
+                className="p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4"
+                glow={user.role === 'admin' && !item.data.readByAdmin}
+              >
+                <div className="space-y-1 text-xs">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <strong className="text-sm">{client?.name || 'Cliente'}</strong>
+                    {item.kind === 'report' && <Badge tone="success">Relatório de Reunião</Badge>}
+                    {item.kind === 'no_show' && <Badge tone="error">Vácuo ({item.data.reason})</Badge>}
+                    {item.kind === 'reschedule' && <Badge tone="warning">Reagendamento</Badge>}
+                    {user.role === 'admin' && (
+                      <Badge tone={item.data.readByAdmin ? 'neutral' : 'primary'}>
+                        {item.data.readByAdmin ? 'Lido' : 'Não lido'}
+                      </Badge>
+                    )}
+                    {linkedSale && (
+                      <>
+                        {linkedSale.pabloValidationStatus === 'pending_pablo' && (
+                          <Badge tone="warning">Venda aguardando confirmação do Pablo</Badge>
+                        )}
+                        {linkedSale.pabloValidationStatus === 'confirmed_sdr' && (
+                          <Badge tone="success">Venda SDR Confirmada</Badge>
+                        )}
+                        {linkedSale.pabloValidationStatus === 'confirmed_vercel' && (
+                          <Badge tone="primary">Venda Vercel Confirmada</Badge>
+                        )}
+                        {linkedSale.pabloValidationStatus === 'not_sold' && (
+                          <Badge tone="error">Não Vendido</Badge>
+                        )}
+                      </>
+                    )}
+                  </div>
+                  <p className="opacity-70">
+                    Vendedor: <strong>{getUserDisplayName(db.users, item.data.sellerId)}</strong> • Enviado em{' '}
+                    {formatDateTimeBR(item.createdAt)}
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button size="sm" variant="secondary" onClick={() => handleOpenItem(item)}>
+                    {user.role === 'admin' && linkedSale && linkedSale.pabloValidationStatus === 'pending_pablo'
+                      ? 'Ler Relatório & Validar Venda'
+                      : 'Ver Conteúdo'}
+                  </Button>
+                  {client && (
+                    <Button size="sm" variant="ghost" onClick={() => onOpenDossier(client.id)}>
+                      Dossiê
+                    </Button>
+                  )}
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Modal de Leitura Completa */}
+      <Modal
+        open={!!selectedItem}
+        onClose={() => setSelectedItem(null)}
+        maxWidth="max-w-2xl"
+        title="Detalhes do Registro Comercial"
+      >
+        {selectedItem?.kind === 'report' && (() => {
+          const modalSale = selectedItem.data.saleId
+            ? db.sales.find((s) => s.id === selectedItem.data.saleId)
+            : null;
+          return (
+            <div className="space-y-3 text-xs">
+              <p><strong>Situação Comercial:</strong> {selectedItem.data.saleClosedChoice}</p>
+              <p><strong>Negócio & Oferta:</strong> {selectedItem.data.businessDescription}</p>
+              <p><strong>Público / Região / Presença Digital:</strong> {selectedItem.data.targetAudienceAndRegion}</p>
+              <p><strong>Dificuldades:</strong> {selectedItem.data.mainDifficulties}</p>
+              <p><strong>Necessidades / Objetivos:</strong> {selectedItem.data.clientNeedsAndGoals}</p>
+              <p><strong>Como o site vai ajudar:</strong> {selectedItem.data.howSiteHelpsClient}</p>
+              <p>
+                <strong>Domínio:</strong> {selectedItem.data.domainPlatform} •{' '}
+                <strong>Próxima call apresentando o site:</strong> {selectedItem.data.nextCallSitePresentationDate}
+              </p>
+              <p><strong>Autoavaliação:</strong> {selectedItem.data.selfEvaluation}</p>
+              <div className="p-3.5 rounded-xl border" style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border }}>
+                <strong className="block mb-1">Depoimento Geral do Vendedor:</strong>
+                <p className="whitespace-pre-wrap">{selectedItem.data.sellerTestimony}</p>
+              </div>
+
+              {modalSale && (
+                <div className="p-3.5 rounded-xl border space-y-2" style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border }}>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <strong>Registro da Venda: {formatCurrencyBRL(modalSale.amountSold)}</strong>
+                    <span>
+                      Enviado: <strong>{formatCurrencyBRL(modalSale.amountReceived)}</strong> • {modalSale.paymentStructure} ({modalSale.paymentMethod})
+                    </span>
+                  </div>
+
+                  {user.role === 'admin' && (
+                    <div className="pt-2 border-t flex flex-wrap items-center gap-2.5" style={{ borderColor: tokens.border }}>
+                      <button
+                        type="button"
+                        onClick={() => handlePabloDecision(modalSale.id, 'confirmed_sdr')}
+                        className="px-3.5 py-2 rounded-xl text-xs font-semibold border transition-all hover:opacity-85 active:scale-[0.98]"
+                        style={{
+                          backgroundColor: 'transparent',
+                          borderColor: '#16845B',
+                          color: '#2AC78E',
+                        }}
+                      >
+                        Confirmar venda
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handlePabloDecision(modalSale.id, 'confirmed_vercel')}
+                        className="px-3.5 py-2 rounded-xl text-xs font-semibold border transition-all hover:opacity-85 active:scale-[0.98]"
+                        style={{
+                          backgroundColor: 'transparent',
+                          borderColor: '#EAB308',
+                          color: '#FACC15',
+                        }}
+                      >
+                        Confirmar venda Vercel
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handlePabloDecision(modalSale.id, 'not_sold')}
+                        className="px-3.5 py-2 rounded-xl text-xs font-semibold border transition-all hover:opacity-85 active:scale-[0.98]"
+                        style={{
+                          backgroundColor: 'transparent',
+                          borderColor: '#C83E4D',
+                          color: '#F27986',
+                        }}
+                      >
+                        Venda não realizada
+                      </button>
                     </div>
                   )}
                 </div>
               )}
             </div>
+          );
+        })()}
+        {selectedItem?.kind === 'no_show' && (
+          <div className="space-y-2 text-xs">
+            <p><strong>Motivo:</strong> {selectedItem.data.reason}</p>
+            <p><strong>Tentativas de contato:</strong> {selectedItem.data.contactAttempts}</p>
+            <p><strong>Descrição:</strong> {selectedItem.data.description}</p>
           </div>
-        </header>
-
-        {/* Área de Visualização da Página */}
-        <main className="flex-1 p-4 sm:p-6 max-w-7xl w-full mx-auto">
-          {activePage === 'dashboard' && (
-            <DashboardPage
-              db={db}
-              currentUser={currentUser}
-              onNavigate={handleNavigate}
-              onConfirmFirstContact={handleConfirmFirstContact}
-              onOpenReassign={handleOpenReassign}
-              onOpenRVendas={(client) => setRVendasClient(client)}
-              onOpenDossier={(client) => setDossierClientId(client.id)}
-              onInspectReport={handleInspectRecord}
-              showToast={showToast}
-              tokens={tokens}
-            />
-          )}
-
-          {activePage === 'clients' && (
-            <ClientsAndContactsPage
-              db={db}
-              currentUser={currentUser}
-              initialStatusFilter={clientsFilterPreset}
-              onConfirmFirstContact={handleConfirmFirstContact}
-              onOpenReassign={handleOpenReassign}
-              onOpenRVendas={(client) => setRVendasClient(client)}
-              onOpenDossier={(client) => setDossierClientId(client.id)}
-              showToast={showToast}
-              tokens={tokens}
-            />
-          )}
-
-          {activePage === 'meetings' && (
-            <SalesMeetingsPage
-              db={db}
-              currentUser={currentUser}
-              onOpenRVendas={(client) => setRVendasClient(client)}
-              onOpenDossier={(client) => setDossierClientId(client.id)}
-              tokens={tokens}
-            />
-          )}
-
-          {activePage === 'sales' && (
-            <SalesPage
-              db={db}
-              currentUser={currentUser}
-              onRefresh={refreshDb}
-              showToast={showToast}
-              tokens={tokens}
-            />
-          )}
-
-          {activePage === 'reports' && (
-            <ReportsPage
-              db={db}
-              currentUser={currentUser}
-              onInspectRecord={handleInspectRecord}
-              onOpenDossier={(client) => setDossierClientId(client.id)}
-              tokens={tokens}
-            />
-          )}
-
-          {activePage === 'users' && (
-            <UsersManagementPage
-              db={db}
-              currentUser={currentUser}
-              onRefresh={refreshDb}
-              showToast={showToast}
-              tokens={tokens}
-            />
-          )}
-
-          {activePage === 'settings' && (
-            <SettingsPage
-              theme={theme}
-              onToggleTheme={onToggleTheme}
-              musicPlaying={musicPlaying}
-              onToggleMusic={handleToggleMusic}
-              musicVolume={musicVolume}
-              onMusicVolumeChange={(v) => {
-                soundEngine.setMusicVolume(v);
-                setMusicVolume(v);
-              }}
-              sfxEnabled={sfxEnabled}
-              onToggleSfx={() => {
-                const next = !sfxEnabled;
-                soundEngine.setSfxEnabled(next);
-                setSfxEnabled(next);
-              }}
-              sfxVolume={sfxVolume}
-              onSfxVolumeChange={(v) => {
-                soundEngine.setSfxVolume(v);
-                setSfxVolume(v);
-              }}
-              tokens={tokens}
-            />
-          )}
-        </main>
-      </div>
-
-      {/* Modal de Reatribuição */}
-      <PwModal
-        isOpen={Boolean(reassignClientObj)}
-        onClose={() => setReassignClientObj(null)}
-        title={`Reatribuir Cliente — ${reassignClientObj?.name || ''}`}
-        subtitle="O histórico completo será preservado e o novo vendedor será notificado imediatamente."
-        tokens={tokens}
-      >
-        {reassignClientObj && (
-          <form onSubmit={handleConfirmReassign} className="flex flex-col gap-4">
-            <PwSelect
-              label="Novo vendedor responsável (ativos)"
-              id="reassign-seller"
-              required
-              value={reassignTargetSellerId}
-              onChange={(e) => setReassignTargetSellerId(e.target.value)}
-              options={db.users
-                .filter(
-                  (u) =>
-                    u.role === 'seller' &&
-                    u.status === 'active' &&
-                    u.id !== reassignClientObj.assignedSellerId
-                )
-                .map((s) => ({
-                  value: s.id,
-                  label: `${s.name} (${s.email})`,
-                }))}
-              tokens={tokens}
-            />
-            <div className="flex justify-end gap-2 pt-2">
-              <PwButton type="button" variant="ghost" onClick={() => setReassignClientObj(null)} tokens={tokens}>
-                Cancelar
-              </PwButton>
-              <PwButton type="submit" icon={ArrowLeftRight} tokens={tokens}>
-                Confirmar Transferência
-              </PwButton>
-            </div>
-          </form>
         )}
-      </PwModal>
-
-      {/* Modal R. Vendas */}
-      <RVendasModal
-        client={rVentasClient}
-        meeting={rVentasMeeting}
-        currentUser={currentUser}
-        onClose={() => setRVendasClient(null)}
-        onSuccess={(msg) => {
-          showToast('success', 'Atendimento registrado', msg);
-          refreshDb();
-        }}
-        onError={(msg) => showToast('error', 'Atenção', msg)}
-        tokens={tokens}
-      />
-
-      {/* Modal Dossiê do Cliente */}
-      <ClientDossierModal
-        client={activeDossierClient}
-        db={db}
-        onClose={() => setDossierClientId(null)}
-        onOpenRVendas={(client) => setRVendasClient(client)}
-        tokens={tokens}
-      />
-
-      {/* Modal Detalhes de Relatório / Ocorrência */}
-      <ReportDetailModal
-        record={inspectedRecord}
-        onClose={() => setInspectedRecord(null)}
-        tokens={tokens}
-      />
+        {selectedItem?.kind === 'reschedule' && (
+          <div className="space-y-2 text-xs">
+            <p>
+              <strong>Horário anterior:</strong>{' '}
+              {formatDateWithWeekdayBR(selectedItem.data.previousDate, selectedItem.data.previousTime)}
+            </p>
+            <p>
+              <strong>Novo horário:</strong>{' '}
+              {formatDateWithWeekdayBR(selectedItem.data.newDate, selectedItem.data.newTime)}
+            </p>
+            <p><strong>Motivo:</strong> {selectedItem.data.reason}</p>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
 
-/**
- * ============================================================================
- * COMPONENTE RAIZ — APP
- * ============================================================================
- */
-export default function App() {
-  const [theme, setTheme] = useState(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
-      return saved.theme === 'light' ? 'light' : 'dark';
-    } catch {
-      return 'dark';
-    }
-  });
+// ============================================================================
+// 16. PÁGINA: VENDAS (CONTROLE FINANCEIRO + VALIDAÇÃO DO PABLO)
+// ============================================================================
+function SalesPage({ onOpenDossier }) {
+  const { user, db, tokens, notify } = useApp();
+  const [editingSale, setEditingSale] = useState(null);
+  const [finStatus, setFinStatus] = useState('Concluída');
+  const [receivedVal, setReceivedVal] = useState('');
 
-  const [currentUser, setCurrentUser] = useState(null);
-  useEffect(() => {
-    soundEngine.loadPreferences();
-    dataEngine.validateSession().then((check) => {
-      if (check.valid) {
-        dataEngine.syncFromSupabase().then(() => setCurrentUser(check.user));
-      }
-    });
-  }, []);
+  const visibleSales = db.sales.filter((s) => (user.role === 'admin' ? true : s.sellerId === user.id));
 
-  const [toast, setToast] = useState(null);
-  const toastTimerRef = useRef(null);
-
-  const showToast = useCallback((type, title, message) => {
-    setToast({ type, title, message });
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = setTimeout(() => {
-      setToast(null);
-    }, 4800);
-  }, []);
-
-  const handleToggleTheme = () => {
-    setTheme((prev) => {
-      const next = prev === 'dark' ? 'light' : 'dark';
-      try {
-        const current = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
-        localStorage.setItem(PREFS_KEY, JSON.stringify({ ...current, theme: next }));
-      } catch {}
-      return next;
-    });
-  };
-
-  const handleLogout = useCallback(
-    (recordAudit = true) => {
-      soundEngine.stopMusic();
-      const p = recordAudit && currentUser?.email
-        ? dataEngine.clearSession(currentUser.email)
-        : dataEngine.clearSession();
-      p.then(() => setCurrentUser(null));
-    },
-    [currentUser]
+  const validSales = visibleSales.filter(
+    (s) =>
+      s.financialStatus !== 'Cancelada' &&
+      s.financialStatus !== 'Reembolsada' &&
+      s.pabloValidationStatus !== 'not_sold'
   );
 
-  const tokens = DESIGN_TOKENS[theme];
+  const totalSold = validSales.reduce((a, b) => a + (Number(b.amountSold) || 0), 0);
+  const totalReceived = validSales.reduce((a, b) => a + (Number(b.amountReceived) || 0), 0);
+
+  const handleSaveFinancial = (e) => {
+    e.preventDefault();
+    try {
+      dataEngine.updateSaleFinancials(user, editingSale.id, {
+        financialStatus: finStatus,
+        amountReceived: receivedVal,
+      });
+      soundEngine.playSfx('success');
+      notify('Valores financeiros atualizados com sucesso!', 'success');
+      setEditingSale(null);
+    } catch (err) {
+      soundEngine.playSfx('error');
+      notify(err.message, 'error');
+    }
+  };
 
   return (
-    <>
-      {currentUser ? (
-        <AuthenticatedShell
-          currentUser={currentUser}
-          theme={theme}
-          onToggleTheme={handleToggleTheme}
-          onLogout={handleLogout}
-          showToast={showToast}
-          tokens={tokens}
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <Card className="p-5">
+          <span className="text-xs opacity-65">Vendas Válidas</span>
+          <div className="text-2xl font-bold mt-1">{validSales.length}</div>
+        </Card>
+        <Card className="p-5">
+          <span className="text-xs opacity-65">Valor Vendido</span>
+          <div className="text-2xl font-bold mt-1" style={{ color: '#B87CFF' }}>
+            {formatCurrencyBRL(totalSold)}
+          </div>
+        </Card>
+        <Card className="p-5">
+          <span className="text-xs opacity-65">Valor Recebido</span>
+          <div className="text-2xl font-bold mt-1" style={{ color: '#2AC78E' }}>
+            {formatCurrencyBRL(totalReceived)}
+          </div>
+        </Card>
+      </div>
+
+      {visibleSales.length === 0 ? (
+        <EmptyState
+          icon={DollarSign}
+          title="Nenhuma venda registrada"
+          description="As vendas são geradas automaticamente ao enviar o Relatório da Reunião de Vendas com fechamento concluído."
         />
       ) : (
-        <AuthScreen
-          theme={theme}
-          onToggleTheme={handleToggleTheme}
-          onAuthenticated={(user) => setCurrentUser(user)}
-          showToast={showToast}
-          tokens={tokens}
-        />
+        <div className="space-y-3">
+          {visibleSales.map((sale) => {
+            const client = db.clients.find((c) => c.id === sale.clientId);
+            return (
+              <Card key={sale.id} className="p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                <div className="space-y-1 text-xs">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onOpenDossier(sale.clientId)}
+                      className="text-sm font-semibold hover:underline"
+                    >
+                      {client?.name || 'Cliente'}
+                    </button>
+                    <Badge tone="neutral">{sale.paymentStructure}</Badge>
+                    <Badge tone="neutral">{sale.paymentMethod}</Badge>
+                    <Badge
+                      tone={
+                        sale.financialStatus === 'Concluída'
+                          ? 'success'
+                          : sale.financialStatus === 'Pagamento pendente'
+                          ? 'warning'
+                          : 'error'
+                      }
+                    >
+                      {sale.financialStatus}
+                    </Badge>
+                    {sale.pabloValidationStatus === 'pending_pablo' && (
+                      <Badge tone="warning">Aguardando validação Pablo</Badge>
+                    )}
+                    {sale.pabloValidationStatus === 'confirmed_sdr' && (
+                      <Badge tone="success">Confirmada SDR (Wix)</Badge>
+                    )}
+                    {sale.pabloValidationStatus === 'confirmed_vercel' && (
+                      <Badge tone="primary">Confirmada Vercel</Badge>
+                    )}
+                    {sale.pabloValidationStatus === 'not_sold' && (
+                      <Badge tone="error">Não Vendido</Badge>
+                    )}
+                  </div>
+                  <p className="opacity-75">
+                    Vendido: <strong>{formatCurrencyBRL(sale.amountSold)}</strong> • Recebido:{' '}
+                    <strong style={{ color: '#2AC78E' }}>{formatCurrencyBRL(sale.amountReceived)}</strong> •
+                    Responsável: <strong>{getUserDisplayName(db.users, sale.sellerId)}</strong>
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {user.role === 'admin' && sale.pabloValidationStatus === 'pending_pablo' && (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="success"
+                        onClick={() => {
+                          dataEngine.validateReportedSaleByPablo(user, sale.id, 'confirmed_sdr');
+                          soundEngine.playSfx('success');
+                          notify('Venda SDR confirmada!', 'success');
+                        }}
+                      >
+                        Confirmar Venda SDR
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        onClick={() => {
+                          dataEngine.validateReportedSaleByPablo(user, sale.id, 'confirmed_vercel');
+                          soundEngine.playSfx('success');
+                          notify('Venda Vercel confirmada!', 'success');
+                        }}
+                      >
+                        Confirmar Venda Vercel
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        onClick={() => {
+                          dataEngine.validateReportedSaleByPablo(user, sale.id, 'not_sold');
+                          soundEngine.playSfx('warning');
+                          notify('Marcado como Não Vendido.', 'warning');
+                        }}
+                      >
+                        Não Vendido
+                      </Button>
+                    </>
+                  )}
+
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      setEditingSale(sale);
+                      setFinStatus(sale.financialStatus);
+                      setReceivedVal(String(sale.amountReceived));
+                    }}
+                  >
+                    Atualizar Recebimento
+                  </Button>
+                </div>
+              </Card>
+            );
+          })}
+        </div>
       )}
 
-      <PwToast toast={toast} onDismiss={() => setToast(null)} tokens={tokens} />
-    </>
+      <Modal
+        open={!!editingSale}
+        onClose={() => setEditingSale(null)}
+        title="Atualizar Status Financeiro da Venda"
+      >
+        <form onSubmit={handleSaveFinancial} className="space-y-4">
+          <SelectField label="Status financeiro" value={finStatus} onChange={(e) => setFinStatus(e.target.value)}>
+            <option value="Concluída">Concluída</option>
+            <option value="Pagamento pendente">Pagamento pendente</option>
+            <option value="Cancelada">Cancelada</option>
+            <option value="Reembolsada">Reembolsada</option>
+          </SelectField>
+          <InputField
+            label={`Valor efetivamente recebido (Máx: ${formatCurrencyBRL(editingSale?.amountSold || 0)})`}
+            type="number"
+            step="0.01"
+            min="0"
+            max={editingSale?.amountSold || 0}
+            value={receivedVal}
+            onChange={(e) => setReceivedVal(e.target.value)}
+          />
+          <div className="flex justify-end gap-3">
+            <Button variant="secondary" onClick={() => setEditingSale(null)}>
+              Cancelar
+            </Button>
+            <Button type="submit" variant="primary">
+              Salvar Alterações
+            </Button>
+          </div>
+        </form>
+      </Modal>
+    </div>
+  );
+}
+
+// ============================================================================
+// 17. PÁGINA: GESTÃO DE USUÁRIOS (EXCLUSIVA DO PABLO)
+// ============================================================================
+function UsersManagementPage() {
+  const { user, db, tokens, notify } = useApp();
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [role, setRole] = useState('seller');
+
+  const [deletingUser, setDeletingUser] = useState(null);
+  const [transferSellerId, setTransferSellerId] = useState('');
+
+  if (user.role !== 'admin') {
+    return (
+      <EmptyState
+        icon={Shield}
+        title="Acesso restrito ao Pablo"
+        description="Apenas o Pablo possui permissão para gerenciar contas da equipe."
+      />
+    );
+  }
+
+  const activeSellers = db.users.filter((u) => u.role === 'seller' && u.active && !u.deleted);
+
+  const handleCreate = (e) => {
+    e.preventDefault();
+    try {
+      dataEngine.createUserAccount(user, { name, email, password, role });
+      soundEngine.playSfx('success');
+      notify(`Conta ${role === 'sdr' ? 'SDR' : 'de Vendedor'} criada com sucesso!`, 'success');
+      setName('');
+      setEmail('');
+      setPassword('');
+    } catch (err) {
+      soundEngine.playSfx('error');
+      notify(err.message, 'error');
+    }
+  };
+
+  const handleConfirmDelete = () => {
+    try {
+      dataEngine.deleteUserAccount(user, deletingUser.id, transferSellerId);
+      soundEngine.playSfx('warning');
+      notify('Conta excluída com preservação integral do histórico.', 'warning');
+      setDeletingUser(null);
+    } catch (err) {
+      soundEngine.playSfx('error');
+      notify(err.message, 'error');
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card className="p-6">
+        <h2 className="text-base font-semibold mb-1">Adicionar Conta da Equipe</h2>
+        <p className="text-xs opacity-70 mb-4">
+          Crie acessos de Vendedor ou SDR. O perfil administrativo é exclusivo do Pablo.
+        </p>
+        <form onSubmit={handleCreate} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end">
+          <InputField label="Nome" required placeholder="Nome" value={name} onChange={(e) => setName(e.target.value)} />
+          <InputField
+            label="E-mail"
+            type="email"
+            required
+            placeholder="email@pontoweb.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+          <InputField
+            label="Senha inicial"
+            type="password"
+            required
+            placeholder="Mín. 6 caracteres"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          <SelectField label="Perfil" value={role} onChange={(e) => setRole(e.target.value)}>
+            <option value="seller">Vendedor</option>
+            <option value="sdr">SDR</option>
+          </SelectField>
+          <Button type="submit" variant="primary">
+            <UserPlus className="w-4 h-4" />
+            <span>Criar Conta</span>
+          </Button>
+        </form>
+      </Card>
+
+      <div className="space-y-3">
+        {db.users.map((u) => (
+          <Card key={u.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <strong className="text-sm">
+                  {u.deleted ? `${u.name} (conta excluída)` : u.name}
+                </strong>
+                <Badge tone={u.role === 'admin' ? 'primary' : u.role === 'sdr' ? 'warning' : 'neutral'}>
+                  {u.role === 'admin' ? 'Pablo' : u.role === 'sdr' ? 'SDR' : 'Vendedor'}
+                </Badge>
+                {!u.deleted && (
+                  <Badge tone={u.active ? 'success' : 'error'}>
+                    {u.active ? 'Ativa' : 'Desativada'}
+                  </Badge>
+                )}
+              </div>
+              <p className="text-xs opacity-70 mt-0.5">{u.email}</p>
+            </div>
+
+            {u.role !== 'admin' && !u.deleted && (
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    try {
+                      dataEngine.toggleUserActive(user, u.id);
+                      soundEngine.playSfx('click');
+                      notify(`Status de ${u.name} alterado.`, 'success');
+                    } catch (err) {
+                      soundEngine.playSfx('error');
+                      notify(err.message, 'error');
+                    }
+                  }}
+                >
+                  {u.active ? 'Desativar' : 'Reativar'}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="danger"
+                  onClick={() => {
+                    setDeletingUser(u);
+                    const alt = activeSellers.find((s) => s.id !== u.id);
+                    setTransferSellerId(alt?.id || '');
+                  }}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Excluir</span>
+                </Button>
+              </div>
+            )}
+          </Card>
+        ))}
+      </div>
+
+      <Modal
+        open={!!deletingUser}
+        onClose={() => setDeletingUser(null)}
+        title={`Excluir Conta • ${deletingUser?.name}`}
+        subtitle="O acesso será encerrado imediatamente, preservando todos os relatórios, reuniões e vendas no histórico."
+      >
+        <div className="space-y-4">
+          {deletingUser?.role === 'seller' && (
+            <SelectField
+              label="Transferir clientes em andamento para (opcional)"
+              value={transferSellerId}
+              onChange={(e) => setTransferSellerId(e.target.value)}
+            >
+              <option value="">Não transferir agora</option>
+              {activeSellers
+                .filter((s) => s.id !== deletingUser.id)
+                .map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+            </SelectField>
+          )}
+          <div className="flex justify-end gap-3">
+            <Button variant="secondary" onClick={() => setDeletingUser(null)}>
+              Cancelar
+            </Button>
+            <Button variant="danger" onClick={handleConfirmDelete}>
+              Confirmar Exclusão
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
+// ============================================================================
+// 18. PÁGINA: CONFIGURAÇÕES (ÁUDIO EXECUTIVE TECH, TEMA & TESTES)
+// ============================================================================
+function SettingsPage() {
+  const { tokens, theme, toggleTheme, musicPlaying, toggleMusic, notify } = useApp();
+  const [sfxEnabled, setSfxEnabled] = useState(soundEngine.prefs.sfxEnabled);
+  const [sfxVol, setSfxVol] = useState(soundEngine.prefs.sfxVolume);
+  const [musicVol, setMusicVol] = useState(soundEngine.prefs.musicVolume);
+
+  return (
+    <div className="space-y-6 max-w-3xl">
+      <Card className="p-6 space-y-5">
+        <div>
+          <h2 className="text-base font-semibold">Identidade Sonora & Áudio Ambiente</h2>
+          <p className="text-xs opacity-70 mt-0.5">
+            Trilha contínua em loop (YouTube) e efeitos sonoros Old Money / Executive Tech.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="p-4 rounded-xl border space-y-3" style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border }}>
+            <div className="flex items-center justify-between">
+              <strong className="text-sm">Música Ambiente (Loop)</strong>
+              <Button size="sm" variant={musicPlaying ? 'primary' : 'secondary'} onClick={toggleMusic}>
+                {musicPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+                <span>{musicPlaying ? 'Pausar' : 'Tocar'}</span>
+              </Button>
+            </div>
+            <div>
+              <label className="text-xs opacity-70 block mb-1">Volume da Música ({Math.round(musicVol * 100)}%)</label>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value={musicVol}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  setMusicVol(v);
+                  soundEngine.setMusicVolume(v);
+                }}
+                className="w-full accent-[#8017FF]"
+              />
+            </div>
+          </div>
+
+          <div className="p-4 rounded-xl border space-y-3" style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border }}>
+            <div className="flex items-center justify-between">
+              <strong className="text-sm">Efeitos Sonoros (SFX)</strong>
+              <Button
+                size="sm"
+                variant={sfxEnabled ? 'primary' : 'secondary'}
+                onClick={() => {
+                  const next = !sfxEnabled;
+                  setSfxEnabled(next);
+                  soundEngine.toggleSfx(next);
+                  if (next) soundEngine.playSfx('success');
+                }}
+              >
+                {sfxEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+                <span>{sfxEnabled ? 'Ativados' : 'Desativados'}</span>
+              </Button>
+            </div>
+            <div>
+              <label className="text-xs opacity-70 block mb-1">Volume dos Efeitos ({Math.round(sfxVol * 100)}%)</label>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value={sfxVol}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  setSfxVol(v);
+                  soundEngine.setSfxVolume(v);
+                }}
+                className="w-full accent-[#8017FF]"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2 pt-2">
+          {[
+            { id: 'click', label: 'Soft Click' },
+            { id: 'success', label: 'Confirmação' },
+            { id: 'notification', label: 'Notificação' },
+            { id: 'whoosh', label: 'Modal Whoosh' },
+            { id: 'warning', label: 'Aviso' },
+            { id: 'error', label: 'Erro' },
+          ].map((sfx) => (
+            <Button
+              key={sfx.id}
+              size="sm"
+              variant="secondary"
+              sfx={null}
+              onClick={() => {
+                soundEngine.playSfx(sfx.id);
+                notify(`Testando timbre: ${sfx.label}`, 'neutral');
+              }}
+            >
+              {sfx.label}
+            </Button>
+          ))}
+        </div>
+      </Card>
+
+      <Card className="p-6 flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-semibold">Aparência do Sistema</h3>
+          <p className="text-xs opacity-70">Tema escuro padrão institucional ou tema claro.</p>
+        </div>
+        <Button variant="secondary" onClick={toggleTheme}>
+          {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          <span>{theme === 'dark' ? 'Alternar para Tema Claro' : 'Alternar para Tema Escuro'}</span>
+        </Button>
+      </Card>
+    </div>
+  );
+}
+
+// ============================================================================
+// 19. APLICAÇÃO PRINCIPAL & SHELL AUTENTICADO
+// ============================================================================
+export default function App() {
+  const [theme, setTheme] = useState(() => localStorage.getItem('pontoweb_theme') || 'dark');
+  const [db, setDb] = useState(() => dataEngine.getState());
+  const [user, setUser] = useState(() => dataEngine.getCurrentUser());
+  const [activePage, setActivePage] = useState('dashboard');
+  const [toasts, setToasts] = useState([]);
+  const [musicPlaying, setMusicPlaying] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+
+  // Modais globais
+  const [meetingModalClient, setMeetingModalClient] = useState(null);
+  const [dossierClientId, setDossierClientId] = useState(null);
+
+  const tokens = THEME_TOKENS[theme] || THEME_TOKENS.dark;
+
+  const notify = (message, tone = 'neutral') => {
+    const id = generateId('tst');
+    setToasts((prev) => [...prev, { id, message, tone }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 3800);
+  };
+
+  useEffect(() => {
+    localStorage.setItem('pontoweb_theme', theme);
+  }, [theme]);
+
+  useEffect(() => {
+    soundEngine.initYouTubePlayer((playing) => setMusicPlaying(playing));
+    const unsub = dataEngine.subscribe((nextDb) => {
+      setDb({ ...nextDb });
+      const current = dataEngine.getCurrentUser();
+      setUser(current);
+    });
+    return unsub;
+  }, []);
+
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+  };
+
+  const toggleMusic = () => {
+    if (musicPlaying) {
+      soundEngine.stopMusic((st) => setMusicPlaying(st));
+    } else {
+      soundEngine.startMusic((st) => setMusicPlaying(st));
+    }
+  };
+
+  const contextValue = {
+    theme,
+    tokens,
+    toggleTheme,
+    user,
+    db,
+    notify,
+    musicPlaying,
+    toggleMusic,
+  };
+
+  // Menu lateral dinâmico conforme o perfil (Pablo, Vendedor ou SDR)
+  const navItems = useMemo(() => {
+    if (!user) return [];
+    if (user.role === 'sdr') {
+      return [
+        { id: 'dashboard', label: 'Dashboard SDR', icon: Layers },
+        { id: 'settings', label: 'Configurações', icon: Sliders },
+      ];
+    }
+    const base = [
+      { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
+      { id: 'clients', label: 'Clientes e contatos', icon: Users },
+      { id: 'meetings', label: 'Reuniões de vendas', icon: Calendar },
+      { id: 'sales', label: 'Vendas', icon: DollarSign },
+      { id: 'reports', label: 'Relatórios', icon: FileText },
+    ];
+    if (user.role === 'admin') {
+      base.push({ id: 'users', label: 'Usuários', icon: Shield });
+    }
+    base.push({ id: 'settings', label: 'Configurações', icon: Sliders });
+    return base;
+  }, [user]);
+
+  const myNotifications = useMemo(() => {
+    if (!user || !db) return [];
+    return db.notifications.filter((n) => n.recipientId === user.id);
+  }, [db, user]);
+
+  const unreadNotifCount = myNotifications.filter((n) => !n.read).length;
+
+  return (
+    <AppContext.Provider value={contextValue}>
+      {/* Player oculto do YouTube em loop */}
+      <div className="fixed -left-[9999px] -top-[9999px] pointer-events-none opacity-0" aria-hidden="true">
+        <div id="pontoweb-yt-player" />
+      </div>
+
+      {/* Toasts flutuantes */}
+      <div className="fixed bottom-4 right-4 z-[60] space-y-2 max-w-sm w-full pointer-events-none px-4 sm:px-0">
+        {toasts.map((t) => (
+          <div
+            key={t.id}
+            className="p-3.5 rounded-xl border text-xs shadow-xl backdrop-blur-md pointer-events-auto flex items-center gap-2.5"
+            style={{
+              backgroundColor: tokens.surface,
+              borderColor:
+                t.tone === 'success'
+                  ? tokens.success
+                  : t.tone === 'error'
+                  ? tokens.error
+                  : t.tone === 'warning'
+                  ? tokens.warning
+                  : tokens.primary,
+              color: tokens.text,
+            }}
+          >
+            <Sparkles className="w-4 h-4 shrink-0" style={{ color: '#B87CFF' }} />
+            <span>{t.message}</span>
+          </div>
+        ))}
+      </div>
+
+      {!user ? (
+        <AuthScreen
+          onAuthenticated={(u) => {
+            setUser(u);
+            setActivePage('dashboard');
+          }}
+        />
+      ) : (
+        <div className="min-h-screen flex flex-col lg:flex-row" style={{ backgroundColor: tokens.bg, color: tokens.text }}>
+          {/* Sidebar responsiva */}
+          <aside
+            className="w-full lg:w-64 border-b lg:border-b-0 lg:border-r p-4 flex flex-col justify-between shrink-0"
+            style={{ backgroundColor: tokens.surface, borderColor: tokens.border }}
+          >
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <PontoWebLogo />
+              </div>
+
+              <nav className="flex lg:flex-col gap-1.5 overflow-x-auto pb-1 lg:pb-0">
+                {navItems.map((item) => {
+                  const Icon = item.icon;
+                  const active = activePage === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => {
+                        soundEngine.playSfx('click');
+                        setActivePage(item.id);
+                      }}
+                      className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-medium whitespace-nowrap transition-all"
+                      style={{
+                        backgroundColor: active ? 'rgba(128, 23, 255, 0.18)' : 'transparent',
+                        color: active ? '#D7B8FF' : tokens.textSecondary,
+                        border: active ? `1px solid rgba(128, 23, 255, 0.4)` : '1px solid transparent',
+                      }}
+                    >
+                      <Icon className="w-4 h-4 shrink-0" />
+                      <span>{item.label}</span>
+                    </button>
+                  );
+                })}
+              </nav>
+            </div>
+
+            <div className="pt-4 border-t space-y-3" style={{ borderColor: tokens.border }}>
+              <div className="px-2">
+                <div className="text-xs font-semibold">{user.name}</div>
+                <div className="text-[11px] opacity-60 truncate">{user.email}</div>
+                <div className="mt-1.5">
+                  <Badge tone={user.role === 'admin' ? 'primary' : user.role === 'sdr' ? 'warning' : 'neutral'}>
+                    {user.role === 'admin' ? 'Pablo' : user.role === 'sdr' ? 'SDR' : 'Vendedor'}
+                  </Badge>
+                </div>
+              </div>
+              <Button
+                variant="secondary"
+                size="sm"
+                className="w-full"
+                onClick={() => {
+                  dataEngine.logout();
+                  setUser(null);
+                }}
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Sair</span>
+              </Button>
+            </div>
+          </aside>
+
+          {/* Área Principal */}
+          <div className="flex-1 flex flex-col min-w-0">
+            <header
+              className="px-6 py-4 border-b flex items-center justify-between gap-4 sticky top-0 z-30 backdrop-blur-md"
+              style={{ backgroundColor: `${tokens.surface}E6`, borderColor: tokens.border }}
+            >
+              <div>
+                <h1 className="text-base font-semibold">
+                  {navItems.find((n) => n.id === activePage)?.label || 'Dashboard'}
+                </h1>
+                <p className="text-[11px] opacity-60">PontoWeb • Operação Comercial</p>
+              </div>
+
+              <div className="flex items-center gap-2.5">
+                <Button size="sm" variant="secondary" onClick={toggleMusic}>
+                  {musicPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+                  <span className="hidden sm:inline">{musicPlaying ? 'Música Ativa' : 'Tocar Música'}</span>
+                </Button>
+
+                <Button size="sm" variant="secondary" onClick={toggleTheme}>
+                  {theme === 'dark' ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+                </Button>
+
+                {/* Central de Notificações */}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundEngine.playSfx('notification');
+                      setShowNotifications(!showNotifications);
+                      if (!showNotifications && unreadNotifCount > 0) {
+                        dataEngine.markAllNotificationsRead(user.id);
+                      }
+                    }}
+                    className="p-2.5 rounded-xl border relative"
+                    style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border }}
+                  >
+                    <Bell className="w-4 h-4" />
+                    {unreadNotifCount > 0 && (
+                      <span
+                        className="absolute -top-1 -right-1 w-4 h-4 rounded-full text-[10px] font-bold flex items-center justify-center text-white"
+                        style={{ backgroundColor: tokens.primary }}
+                      >
+                        {unreadNotifCount}
+                      </span>
+                    )}
+                  </button>
+
+                  {showNotifications && (
+                    <div
+                      className="absolute right-0 mt-2 w-80 rounded-2xl border shadow-2xl p-4 z-50 space-y-2 max-h-96 overflow-y-auto"
+                      style={{ backgroundColor: tokens.surface, borderColor: tokens.border }}
+                    >
+                      <div className="flex items-center justify-between pb-2 border-b" style={{ borderColor: tokens.border }}>
+                        <strong className="text-xs">Notificações</strong>
+                        <button
+                          type="button"
+                          onClick={() => setShowNotifications(false)}
+                          className="text-xs opacity-60 hover:opacity-100"
+                        >
+                          Fechar
+                        </button>
+                      </div>
+                      {myNotifications.length === 0 ? (
+                        <p className="text-xs opacity-60 py-4 text-center">Nenhuma notificação.</p>
+                      ) : (
+                        myNotifications.slice(0, 12).map((n) => (
+                          <div
+                            key={n.id}
+                            className="p-2.5 rounded-xl border text-xs"
+                            style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border }}
+                          >
+                            <strong>{n.title}</strong>
+                            <p className="opacity-75 mt-0.5">{n.message}</p>
+                            <span className="text-[10px] opacity-50 block mt-1">
+                              {formatDateTimeBR(n.createdAt)}
+                            </span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </header>
+
+            <main className="p-4 sm:p-6 max-w-7xl w-full mx-auto flex-1">
+              {activePage === 'dashboard' &&
+                (user.role === 'admin' ? (
+                  <PabloDashboardPage
+                    onNavigate={setActivePage}
+                    onOpenDossier={(cid) => setDossierClientId(cid)}
+                  />
+                ) : user.role === 'sdr' ? (
+                  <SdrDashboardPage />
+                ) : (
+                  <SellerDashboardPage
+                    onOpenMeetingModal={(cli) => setMeetingModalClient(cli)}
+                    onOpenDossier={(cid) => setDossierClientId(cid)}
+                  />
+                ))}
+
+              {activePage === 'clients' && user.role !== 'sdr' && (
+                <ClientsAndContactsPage
+                  onOpenMeetingModal={(cli) => setMeetingModalClient(cli)}
+                  onOpenDossier={(cid) => setDossierClientId(cid)}
+                />
+              )}
+
+              {activePage === 'meetings' && user.role !== 'sdr' && (
+                <MeetingsPage
+                  onOpenMeetingModal={(cli) => setMeetingModalClient(cli)}
+                  onOpenDossier={(cid) => setDossierClientId(cid)}
+                />
+              )}
+
+              {activePage === 'sales' && user.role !== 'sdr' && (
+                <SalesPage onOpenDossier={(cid) => setDossierClientId(cid)} />
+              )}
+
+              {activePage === 'reports' && user.role !== 'sdr' && (
+                <ReportsPage onOpenDossier={(cid) => setDossierClientId(cid)} />
+              )}
+
+              {activePage === 'users' && user.role === 'admin' && <UsersManagementPage />}
+
+              {activePage === 'settings' && <SettingsPage />}
+            </main>
+          </div>
+        </div>
+      )}
+
+      {/* Modais Globais */}
+      <MeetingActionModal
+        open={!!meetingModalClient}
+        onClose={() => setMeetingModalClient(null)}
+        client={meetingModalClient}
+      />
+      <ClientDossierModal
+        open={!!dossierClientId}
+        onClose={() => setDossierClientId(null)}
+        clientId={dossierClientId}
+        onOpenMeetingModal={(cli) => setMeetingModalClient(cli)}
+      />
+    </AppContext.Provider>
   );
 }
