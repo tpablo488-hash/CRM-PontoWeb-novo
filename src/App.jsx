@@ -516,6 +516,26 @@ class PontoWebDataEngine {
             deleted: false,
             createdAt: nowIso(),
           },
+          {
+            id: 'usr_jay_seller',
+            name: 'Vendedor Jay',
+            email: 'jtoxx7@gmail.com',
+            passwordHash: '1234vendedorpntw',
+            role: 'seller',
+            active: true,
+            deleted: false,
+            createdAt: nowIso(),
+          },
+          {
+            id: 'usr_oliver_sdr',
+            name: 'Oliver SDR',
+            email: 'oliverf487@gmail.com',
+            passwordHash: '1234SDRpntw',
+            role: 'sdr',
+            active: true,
+            deleted: false,
+            createdAt: nowIso(),
+          },
         ],
         clients: [],
         sdrSubmissions: [],
@@ -543,6 +563,14 @@ class PontoWebDataEngine {
         db.sdrSubmissions = [];
         changed = true;
       }
+      const ensureUser = (u) => {
+        if (!db.users.find((x) => x.email.toLowerCase() === u.email.toLowerCase())) {
+          db.users.push(u);
+          changed = true;
+        }
+      };
+      ensureUser({ id: 'usr_jay_seller', name: 'Vendedor Jay', email: 'jtoxx7@gmail.com', passwordHash: '1234vendedorpntw', role: 'seller', active: true, deleted: false, createdAt: nowIso() });
+      ensureUser({ id: 'usr_oliver_sdr', name: 'Oliver SDR', email: 'oliverf487@gmail.com', passwordHash: '1234SDRpntw', role: 'sdr', active: true, deleted: false, createdAt: nowIso() });
       if (changed) this.saveState(db);
     }
   }
