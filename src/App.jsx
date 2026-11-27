@@ -1824,7 +1824,7 @@ function AuthScreen({ onAuthenticated }) {
             </h1>
             <p className="text-xs mt-1" style={{ color: tokens.textSecondary }}>
               {mode === 'login'
-                ? 'Ambiente comercial privado para Pablo, Vendedores e SDR.'
+                ? 'Ambiente comercial privado para o time comercial PontoWeb.'
                 : 'Informe seu e-mail cadastrado e defina uma nova senha de acesso.'}
             </p>
           </div>
