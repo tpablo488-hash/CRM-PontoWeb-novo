@@ -1795,7 +1795,7 @@ function AuthScreen({ onAuthenticated }) {
           <div>
             <Badge tone="primary">Acesso Restrito • PontoWeb</Badge>
             <h1 className="text-xl font-bold mt-2.5" style={{ color: tokens.text }}>
-              {mode === 'login' ? 'Entrar no PontoWeb CRM' : 'Recuperar Senha'}
+              <span style={{ letterSpacing: '0.08em' }}>{mode === 'login' ? 'Entrar no PontoWeb CRM' : 'Recuperar Senha'}</span>
             </h1>
             <p className="text-xs mt-1" style={{ color: tokens.textSecondary }}>
               {mode === 'login'
@@ -1885,33 +1885,15 @@ function AuthScreen({ onAuthenticated }) {
             <p className="text-[11px] uppercase tracking-wider opacity-60 font-semibold">
               Contas Provisionadas (Acesso Rápido):
             </p>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 gap-2">
               <button
                 type="button"
                 onClick={() => fillQuickAccount('tpablo488@gmail.com', 'PontoWeb@2026')}
                 className="p-2.5 rounded-xl border text-left text-xs transition-all hover:border-[#8017FF]"
                 style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border, color: tokens.text }}
               >
-                <div className="font-semibold text-[#B87CFF]">Pablo</div>
+                <div className="font-semibold text-[#B87CFF]">Pablo (Admin)</div>
                 <div className="opacity-65 text-[10px] truncate">tpablo488@gmail.com</div>
-              </button>
-              <button
-                type="button"
-                onClick={() => fillQuickAccount('rayvenart3@gmail.com', 'Vendas@2026')}
-                className="p-2.5 rounded-xl border text-left text-xs transition-all hover:border-[#8017FF]"
-                style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border, color: tokens.text }}
-              >
-                <div className="font-semibold text-[#2AC78E]">Vendedor</div>
-                <div className="opacity-65 text-[10px] truncate">rayvenart3@gmail.com</div>
-              </button>
-              <button
-                type="button"
-                onClick={() => fillQuickAccount('sdr@pontoweb.com', 'Sdr@2026')}
-                className="p-2.5 rounded-xl border text-left text-xs transition-all hover:border-[#8017FF]"
-                style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border, color: tokens.text }}
-              >
-                <div className="font-semibold text-[#F2B450]">SDR</div>
-                <div className="opacity-65 text-[10px] truncate">sdr@pontoweb.com</div>
               </button>
             </div>
           </div>
@@ -4812,7 +4794,7 @@ export default function App() {
               style={{ backgroundColor: `${tokens.surface}E6`, borderColor: tokens.border }}
             >
               <div>
-                <h1 className="text-base font-semibold">
+                <h1 className="text-base font-semibold" style={{ letterSpacing: '0.08em' }}>
                   {navItems.find((n) => n.id === activePage)?.label || 'Dashboard'}
                 </h1>
                 <p className="text-[11px] opacity-60">PontoWeb • Operação Comercial</p>
