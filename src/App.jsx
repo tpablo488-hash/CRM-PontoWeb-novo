@@ -2835,13 +2835,13 @@ function SellerDashboardPage({ onOpenMeetingModal, onOpenDossier }) {
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5 pt-4 border-t text-xs" style={{ borderColor: tokens.border }}>
-          <div className="p-3 rounded-xl border" style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border }}>
-            <span className="opacity-65 block">Vendas Confirmadas</span>
-            <strong className="text-lg font-bold mt-0.5 block">{salesCount}</strong>
-          </div>
-          <div className="p-3 rounded-xl border" style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border }}>
+          <div className="p-3 rounded-xl border" style={{ backgroundColor: tokens.surfaceElevated, borderColor: '#2AC78E' }}>
             <span className="opacity-65 block">Meta Mínima</span>
             <strong className="text-sm font-semibold mt-1 block">4 vendas</strong>
+          </div>
+          <div className="p-3 rounded-xl border" style={{ backgroundColor: tokens.surfaceElevated, borderColor: '#2AC78E' }}>
+            <span className="opacity-65 block">Vendas Confirmadas</span>
+            <strong className="text-lg font-bold mt-0.5 block" style={{ color: '#2AC78E' }}>{salesCount}</strong>
           </div>
           <div className="p-3 rounded-xl border" style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border }}>
             <span className="opacity-65 block">Meta Máxima</span>
