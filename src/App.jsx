@@ -1885,15 +1885,33 @@ function AuthScreen({ onAuthenticated }) {
             <p className="text-[11px] uppercase tracking-wider opacity-60 font-semibold">
               Contas Provisionadas (Acesso Rápido):
             </p>
-            <div className="grid grid-cols-1 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <button
                 type="button"
-                onClick={() => fillQuickAccount('tpablo488@gmail.com', 'PontoWeb@2026')}
+                onClick={() => fillQuickAccount('tpablo488@gmail.com', 'PROVISORIIOhav787682#$')}
                 className="p-2.5 rounded-xl border text-left text-xs transition-all hover:border-[#8017FF]"
                 style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border, color: tokens.text }}
               >
                 <div className="font-semibold text-[#B87CFF]">Pablo (Admin)</div>
                 <div className="opacity-65 text-[10px] truncate">tpablo488@gmail.com</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => fillQuickAccount('jtoxx7@gmail.com', '1234vendedorpntw')}
+                className="p-2.5 rounded-xl border text-left text-xs transition-all hover:border-[#8017FF]"
+                style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border, color: tokens.text }}
+              >
+                <div className="font-semibold text-[#2AC78E]">Vendedor Jay</div>
+                <div className="opacity-65 text-[10px] truncate">jtoxx7@gmail.com</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => fillQuickAccount('oliverf487@gmail.com', '1234SDRpntw')}
+                className="p-2.5 rounded-xl border text-left text-xs transition-all hover:border-[#8017FF]"
+                style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border, color: tokens.text }}
+              >
+                <div className="font-semibold text-[#F2B450]">Oliver (SDR)</div>
+                <div className="opacity-65 text-[10px] truncate">oliverf487@gmail.com</div>
               </button>
             </div>
           </div>
@@ -4399,6 +4417,24 @@ function UsersManagementPage() {
 
             {u.role !== 'admin' && !u.deleted && (
               <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    const newPass = window.prompt(`Nova senha para ${u.name}:`);
+                    if (!newPass) return;
+                    try {
+                      dataEngine.resetPassword(u.email, newPass);
+                      soundEngine.playSfx('success');
+                      notify(`Senha de ${u.name} alterada com sucesso.`, 'success');
+                    } catch (err) {
+                      soundEngine.playSfx('error');
+                      notify(err.message, 'error');
+                    }
+                  }}
+                >
+                  Alterar Senha
+                </Button>
                 <Button
                   size="sm"
                   variant="secondary"
