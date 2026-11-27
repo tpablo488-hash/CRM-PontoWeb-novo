@@ -606,7 +606,28 @@ class PontoWebDataEngine {
     try {
       const { data } = await supabase.from('crm_state').select('data').eq('id', 'singleton').single();
       if (data?.data) {
-        localStorage.setItem(DB_KEY, JSON.stringify(data.data));
+        const remote = data.data;
+        const local = this.getState() || {};
+        // Merge arrays by id (union) to avoid losing either side's changes
+        const mergeArr = (a, b, key='id') => {
+          const map = new Map();
+          [...(a||[]), ...(b||[])].forEach((x) => { if (x && x[key]) map.set(x[key], x); });
+          return Array.from(map.values());
+        };
+        const merged = { ...local, ...remote };
+        merged.users = mergeArr(local.users, remote.users);
+        merged.clients = mergeArr(local.clients, remote.clients);
+        merged.sdrSubmissions = mergeArr(local.sdrSubmissions, remote.sdrSubmissions);
+        merged.tasks = mergeArr(local.tasks, remote.tasks);
+        merged.meetings = mergeArr(local.meetings, remote.meetings);
+        merged.meetingReports = mergeArr(local.meetingReports, remote.meetingReports);
+        merged.noShowOccurrences = mergeArr(local.noShowOccurrences, remote.noShowOccurrences);
+        merged.rescheduleRecords = mergeArr(local.rescheduleRecords, remote.rescheduleRecords);
+        merged.sales = mergeArr(local.sales, remote.sales);
+        merged.notifications = mergeArr(local.notifications, remote.notifications);
+        merged.timeline = mergeArr(local.timeline, remote.timeline);
+        merged.auditLogs = mergeArr(local.auditLogs, remote.auditLogs);
+        localStorage.setItem(DB_KEY, JSON.stringify(merged));
         this.broadcast();
       }
     } catch (e) {
