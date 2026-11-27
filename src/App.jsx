@@ -729,7 +729,7 @@ class PontoWebDataEngine {
   }
 
   // SDR cria lead para revisão do Pablo (sem selecionar vendedor)
-  submitLeadFromSdr(actor, payload) {
+  async submitLeadFromSdr(actor, payload) {
     if (!actor || actor.role !== 'sdr' || !actor.active) {
       throw new Error('Permissão negada: apenas contas SDR ativas podem enviar leads nesta fila.');
     }
@@ -768,6 +768,8 @@ class PontoWebDataEngine {
 
     this.logAudit(db, actor.id, 'SDR_LEAD_SUBMITTED', `SDR enviou lead ${submission.name} ao Pablo`);
     this.saveState(db);
+    // Force sync to Supabase so Pablo receives it across devices
+    await this.syncToSupabase(db);
     return submission;
   }
 
@@ -2607,10 +2609,10 @@ function SdrDashboardPage() {
   // Vendas confirmadas pelo Pablo via botão verde ("Confirmar venda" / confirmed_sdr)
   const confirmedSdrSales = db.sales.filter((s) => s.pabloValidationStatus === 'confirmed_sdr');
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      dataEngine.submitLeadFromSdr(user, form);
+      await dataEngine.submitLeadFromSdr(user, form);
       soundEngine.playSfx('success');
       notify('Dados enviados ao Pablo com sucesso!', 'success');
       setForm({ name: '', segment: '', whatsapp: '', meetingDate: '', meetingTime: '', notes: '' });
@@ -4688,7 +4690,14 @@ export default function App() {
     });
     // Pull latest shared state from Supabase on mount (cross-device sync)
     dataEngine.syncFromSupabase().catch(() => {});
-    return unsub;
+    // Periodic poll to receive updates from other devices/users
+    const pollId = setInterval(() => {
+      dataEngine.syncFromSupabase().catch(() => {});
+    }, 15000);
+    return () => {
+      clearInterval(pollId);
+      unsub();
+    };
   }, []);
 
   const toggleTheme = () => {
