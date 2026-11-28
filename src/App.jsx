@@ -1496,6 +1496,17 @@ class PontoWebDataEngine {
     return sub;
   }
 
+  impersonateUser(actor, targetUserId) {
+    if (!actor || actor.role !== 'admin' || !actor.active) throw new Error('Apenas o Pablo pode alternar contas.');
+    const db = this.getState();
+    const target = db.users.find((u) => u.id === targetUserId && !u.deleted && u.active);
+    if (!target) throw new Error('Usuário não encontrado ou inativo.');
+    localStorage.setItem(SESSION_KEY, JSON.stringify({ userId: target.id, loginAt: nowIso(), impersonatedBy: actor.id }));
+    this.logAudit(db, actor.id, 'IMPERSONATE', `Pablo acessou a conta de ${target.name} (${target.email})`);
+    this.saveState(db);
+    return target;
+  }
+
   // Gestão de Usuários pelo Pablo
   createUserAccount(actor, { name, email, password, role }) {
     if (!actor || actor.role !== 'admin' || !actor.active) {
@@ -4557,6 +4568,22 @@ function UsersManagementPage() {
                   }}
                 >
                   Alterar Senha
+                </Button>
+                <Button
+                  size="sm"
+                  variant="primary"
+                  onClick={() => {
+                    try {
+                      const target = dataEngine.impersonateUser(user, u.id);
+                      soundEngine.playSfx('success');
+                      window.location.reload();
+                    } catch (err) {
+                      soundEngine.playSfx('error');
+                      notify(err.message, 'error');
+                    }
+                  }}
+                >
+                  Entrar como
                 </Button>
                 <Button
                   size="sm"
