@@ -540,6 +540,8 @@ class PontoWebDataEngine {
         ],
         clients: [],
         sdrSubmissions: [],
+        sdrDailyDirection: null,
+        sdrColdcallReports: [],
         tasks: [],
         meetings: [],
         meetingReports: [],
@@ -562,6 +564,14 @@ class PontoWebDataEngine {
       }
       if (!db.sdrSubmissions) {
         db.sdrSubmissions = [];
+        changed = true;
+      }
+      if (!db.sdrDailyDirection) {
+        db.sdrDailyDirection = null;
+        changed = true;
+      }
+      if (!db.sdrColdcallReports) {
+        db.sdrColdcallReports = [];
         changed = true;
       }
       const ensureUser = (u) => {
@@ -771,6 +781,62 @@ class PontoWebDataEngine {
     // Force sync to Supabase so Pablo receives it across devices
     await this.syncToSupabase(db);
     return submission;
+  }
+
+  setSdrDailyDirection(actor, payload) {
+    if (!actor || actor.role !== 'admin' || !actor.active) throw new Error('Apenas o Pablo pode definir o direcionamento do SDR.');
+    const { theme, niches, meetingGoalMin, meetingGoalMax, peopleGoal, script } = payload;
+    const min = Number(meetingGoalMin);
+    const max = Number(meetingGoalMax);
+    if (isNaN(min) || isNaN(max) || min < 1 || max > 3 || min > max) {
+      throw new Error('Meta de reuniões: mínimo entre 1 e 3, máximo entre 1 e 3, e mínimo <= máximo.');
+    }
+    const db = this.getState();
+    db.sdrDailyDirection = {
+      theme: (theme || '').trim(),
+      niches: (niches || []).map((n) => String(n).trim()).filter(Boolean).slice(0, 3),
+      meetingGoalMin: min,
+      meetingGoalMax: max,
+      peopleGoal: Number(peopleGoal) || 0,
+      script: (script || '').trim(),
+      setById: actor.id,
+      setAt: nowIso(),
+    };
+    this.logAudit(db, actor.id, 'SDR_DIRECTION_SET', `Direcionamento do SDR definido: ${theme}`);
+    this.saveState(db);
+    return db.sdrDailyDirection;
+  }
+
+  async submitSdrColdcallReport(actor, form) {
+    if (!actor || actor.role !== 'sdr' || !actor.active) throw new Error('Apenas SDR pode enviar relatório de cold calls.');
+    if (!form.callsMade || !form.callsAnswered || form.refusals === undefined || form.refusals === '' || !form.meetingsScheduled || !form.niches || !form.scriptUsed || !form.objections || !form.selfEval || !form.notes) {
+      throw new Error('Preencha todos os campos obrigatórios do relatório.');
+    }
+    const db = this.getState();
+    const report = {
+      id: generateId('sdr_rep'),
+      sdrId: actor.id,
+      sdrName: actor.name,
+      date: nowIso(),
+      callsMade: Number(form.callsMade),
+      callsAnswered: Number(form.callsAnswered),
+      refusals: Number(form.refusals),
+      refusalNotes: form.refusalNotes || '',
+      meetingsScheduled: Number(form.meetingsScheduled),
+      niches: form.niches,
+      scriptUsed: form.scriptUsed,
+      objections: form.objections,
+      selfEval: form.selfEval,
+      notes: form.notes,
+    };
+    db.sdrColdcallReports.unshift(report);
+    db.users.filter((u) => u.role === 'admin' && u.active && !u.deleted).forEach((p) => {
+      this.pushNotification(db, p.id, 'Novo relatório de Cold Call', `${actor.name} enviou o relatório do dia.`, { reportId: report.id });
+    });
+    this.logAudit(db, actor.id, 'SDR_COLD_CALL_REPORT', `Relatório de cold call enviado por ${actor.name}`);
+    this.saveState(db);
+    await this.syncToSupabase(db);
+    return report;
   }
 
   // Pablo aprova, edita e distribui um lead vindo do SDR
@@ -1395,6 +1461,32 @@ class PontoWebDataEngine {
       if (n.recipientId === userId) n.read = true;
     });
     this.saveState(db);
+  }
+
+  rejectSdrSubmission(actor, submissionId, comment) {
+    if (!actor || actor.role !== 'admin' || !actor.active) throw new Error('Apenas o Pablo pode recusar leads.');
+    const db = this.getState();
+    const sub = db.sdrSubmissions.find((s) => s.id === submissionId);
+    if (!sub) throw new Error('Lead não encontrado.');
+    sub.status = 'rejected';
+    sub.rejectedAt = nowIso();
+    sub.rejectedComment = comment || '';
+    this.logAudit(db, actor.id, 'SDR_LEAD_REJECTED', `Lead ${sub.name} recusado pelo Pablo.`);
+    this.saveState(db);
+    return sub;
+  }
+
+  returnSdrSubmission(actor, submissionId, comment) {
+    if (!actor || actor.role !== 'admin' || !actor.active) throw new Error('Apenas o Pablo pode devolver leads.');
+    const db = this.getState();
+    const sub = db.sdrSubmissions.find((s) => s.id === submissionId);
+    if (!sub) throw new Error('Lead não encontrado.');
+    sub.status = 'returned';
+    sub.returnedAt = nowIso();
+    sub.returnComment = comment || '';
+    this.logAudit(db, actor.id, 'SDR_LEAD_RETURNED', `Lead ${sub.name} devolvido ao SDR.`);
+    this.saveState(db);
+    return sub;
   }
 
   // Gestão de Usuários pelo Pablo
@@ -4729,17 +4821,21 @@ export default function App() {
     if (user.role === 'sdr') {
       return [
         { id: 'dashboard', label: 'Dashboard SDR', icon: Layers },
+        { id: 'coldcalls', label: 'Coldcalls', icon: Phone },
+        { id: 'sdr_reports', label: 'Relatórios', icon: FileText },
         { id: 'settings', label: 'Configurações', icon: Sliders },
       ];
     }
     const base = [
       { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
       { id: 'clients', label: 'Clientes e contatos', icon: Users },
+      { id: 'review', label: 'Revisão', icon: CheckCircle2 },
       { id: 'meetings', label: 'Reuniões de vendas', icon: Calendar },
       { id: 'sales', label: 'Vendas', icon: DollarSign },
       { id: 'reports', label: 'Relatórios', icon: FileText },
     ];
     if (user.role === 'admin') {
+      base.push({ id: 'sdr_direction', label: 'Direcionamento do SDR', icon: Target });
       base.push({ id: 'users', label: 'Usuários', icon: Shield });
     }
     base.push({ id: 'settings', label: 'Configurações', icon: Sliders });
@@ -4975,6 +5071,131 @@ export default function App() {
                   onOpenMeetingModal={(cli) => setMeetingModalClient(cli)}
                   onOpenDossier={(cid) => setDossierClientId(cid)}
                 />
+              )}
+
+              {activePage === 'review' && user.role === 'admin' && (
+                <Card className="p-6 space-y-3">
+                  <h2 className="text-base font-semibold">Revisão de Leads do SDR</h2>
+                  {db.sdrSubmissions.filter((s) => s.status === 'pending_pablo').length === 0 && (
+                    <p className="text-xs opacity-70">Nenhum lead pendente de revisão.</p>
+                  )}
+                  {db.sdrSubmissions.filter((s) => s.status === 'pending_pablo').map((sub) => (
+                    <div key={sub.id} className="border rounded-xl p-4 space-y-2" style={{ borderColor: tokens.border, backgroundColor: tokens.surfaceElevated }}>
+                      <div className="flex items-center justify-between">
+                        <strong className="text-sm">{sub.name}</strong>
+                        <Badge tone="warning">Pendente</Badge>
+                      </div>
+                      <p className="text-xs opacity-70">{sub.segment} • {sub.whatsapp}</p>
+                      <p className="text-xs opacity-70">{formatDateWithWeekdayBR(sub.meetingDate, sub.meetingTime)}</p>
+                      <p className="text-[11px] opacity-60">Enviado por: {db.users.find((u) => u.id === sub.submittedById)?.name || 'SDR'} em {formatDateTimeBR(sub.createdAt)}</p>
+                      {sub.notes && <p className="text-xs opacity-70">Obs: {sub.notes}</p>}
+                      <div className="flex gap-2 pt-2">
+                        <Button size="sm" variant="success" onClick={() => { try { const seller = db.users.find((u) => u.role === 'seller' && u.active && !u.deleted); dataEngine.approveSdrSubmission(user, sub.id, { name: sub.name, segment: sub.segment, whatsapp: sub.whatsapp, meetingDate: sub.meetingDate, meetingTime: sub.meetingTime, notes: sub.notes, sellerId: seller?.id }); notify('Lead aprovado e distribuído.', 'success'); } catch (e) { notify(e.message, 'error'); } }}>Aprovar</Button>
+                        <Button size="sm" variant="danger" onClick={() => { try { dataEngine.rejectSdrSubmission ? dataEngine.rejectSdrSubmission(user, sub.id, 'Recusado') : null; notify('Lead recusado.', 'warning'); } catch (e) { notify(e.message, 'error'); } }}>Recusar</Button>
+                      </div>
+                    </div>
+                  ))}
+                </Card>
+              )}
+
+              {activePage === 'sdr_direction' && user.role === 'admin' && (
+                <Card className="p-6 space-y-4">
+                  <h2 className="text-base font-semibold">Direcionamento do SDR (diário)</h2>
+                  <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); try { dataEngine.setSdrDailyDirection(user, { theme: fd.get('theme'), niches: [fd.get('n1'), fd.get('n2'), fd.get('n3')], meetingGoalMin: fd.get('min'), meetingGoalMax: fd.get('max'), peopleGoal: fd.get('people'), script: fd.get('script') }); soundEngine.playSfx('success'); notify('Direcionamento enviado ao SDR.', 'success'); } catch (err) { soundEngine.playSfx('error'); notify(err.message, 'error'); } }} className="space-y-3">
+                    <InputField label="Tema do dia" name="theme" required placeholder="Ex: Saúde" />
+                    <div className="grid grid-cols-3 gap-2">
+                      <InputField label="Nicho 1" name="n1" required placeholder="odontologia" />
+                      <InputField label="Nicho 2" name="n2" required placeholder="nutricionista" />
+                      <InputField label="Nicho 3" name="n3" required placeholder="psicólogo" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <InputField label="Meta reuniões mín." name="min" type="number" required placeholder="1" />
+                      <InputField label="Meta reuniões máx." name="max" type="number" required placeholder="3" />
+                    </div>
+                    <InputField label="Meta pessoas até fim do script" name="people" type="number" required placeholder="50" />
+                    <div>
+                      <label className="text-xs font-medium opacity-80 block mb-1">Script do dia</label>
+                      <textarea name="script" required rows={4} className="w-full rounded-xl border px-3 py-2 text-sm" style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border, color: tokens.text }} placeholder="Escreva o script do dia..." />
+                    </div>
+                    <Button type="submit" variant="primary">Enviar ao SDR</Button>
+                  </form>
+                  {db.sdrDailyDirection && (
+                    <div className="text-xs opacity-70 mt-2">Último: {db.sdrDailyDirection.theme} ({db.sdrDailyDirection.niches.join(', ')})</div>
+                  )}
+                </Card>
+              )}
+
+              {activePage === 'coldcalls' && user.role === 'sdr' && (
+                <Card className="p-6 space-y-4">
+                  <h2 className="text-base font-semibold">Coldcalls — Direcionamento do Dia</h2>
+                  {!db.sdrDailyDirection && <p className="text-xs opacity-70">Aguardando direcionamento do Pablo.</p>}
+                  {db.sdrDailyDirection && (
+                    <div className="space-y-3">
+                      <div><strong>Tema:</strong> {db.sdrDailyDirection.theme}</div>
+                      <div><strong>Nichos:</strong> {db.sdrDailyDirection.niches.join(', ')}</div>
+                      <div><strong>Meta reuniões:</strong> {db.sdrDailyDirection.meetingGoalMin} a {db.sdrDailyDirection.meetingGoalMax}</div>
+                      <div><strong>Meta pessoas (fim do script):</strong> {db.sdrDailyDirection.peopleGoal}</div>
+                      <div className="p-3 rounded-xl border" style={{ borderColor: tokens.border, backgroundColor: tokens.surfaceElevated }}>
+                        <p className="text-xs font-semibold mb-1">Script do dia:</p>
+                        <p className="text-xs whitespace-pre-wrap">{db.sdrDailyDirection.script}</p>
+                      </div>
+                    </div>
+                  )}
+                </Card>
+              )}
+
+              {activePage === 'sdr_reports' && user.role === 'sdr' && (
+                <Card className="p-6 space-y-4">
+                  <h2 className="text-base font-semibold">Relatório de Cold Calls</h2>
+                  <form onSubmit={async (e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); try { await dataEngine.submitSdrColdcallReport(user, { callsMade: fd.get('callsMade'), callsAnswered: fd.get('callsAnswered'), refusals: fd.get('refusals'), refusalNotes: fd.get('refusalNotes'), meetingsScheduled: fd.get('meetingsScheduled'), niches: fd.get('niches'), scriptUsed: fd.get('scriptUsed'), objections: fd.get('objections'), selfEval: fd.get('selfEval'), notes: fd.get('notes') }); soundEngine.playSfx('success'); notify('Relatório enviado!', 'success'); e.currentTarget.reset(); } catch (err) { soundEngine.playSfx('error'); notify(err.message, 'error'); } }} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <InputField label="Ligações efetuadas *" name="callsMade" type="number" required />
+                    <InputField label="Ligações atendidas *" name="callsAnswered" type="number" required />
+                    <InputField label="Clientes que recusaram/desligaram *" name="refusals" type="number" required />
+                    <InputField label="Reuniões agendadas *" name="meetingsScheduled" type="number" required />
+                    <InputField label="Nichos abordados hoje *" name="niches" required placeholder="odontologia, nutricionista" />
+                    <InputField label="Script usado *" name="scriptUsed" required placeholder="Script do dia" />
+                    <div className="sm:col-span-2">
+                      <label className="text-xs font-medium opacity-80 block mb-1">Observação das recusas *</label>
+                      <textarea name="refusalNotes" required rows={2} className="w-full rounded-xl border px-3 py-2 text-sm" style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border, color: tokens.text }} placeholder="cliente ouviu até o Hook e desligou / cliente lançou objeção e desligou" />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="text-xs font-medium opacity-80 block mb-1">Objeções mais pertinentes *</label>
+                      <textarea name="objections" required rows={2} className="w-full rounded-xl border px-3 py-2 text-sm" style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border, color: tokens.text }} placeholder="Principais objeções..." />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="text-xs font-medium opacity-80 block mb-1">Autoavaliação *</label>
+                      <textarea name="selfEval" required rows={2} className="w-full rounded-xl border px-3 py-2 text-sm" style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border, color: tokens.text }} placeholder="Como foi meu desempenho hoje..." />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="text-xs font-medium opacity-80 block mb-1">Anotação livre *</label>
+                      <textarea name="notes" required rows={3} className="w-full rounded-xl border px-3 py-2 text-sm" style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border, color: tokens.text }} placeholder="O que houve hoje nas coldcalls..." />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <Button type="submit" variant="primary">Enviar Relatório</Button>
+                    </div>
+                  </form>
+                  <div className="space-y-2 mt-4">
+                    <h3 className="text-sm font-semibold">Histórico de relatórios</h3>
+                    {db.sdrColdcallReports.filter((r) => r.sdrId === user.id).length === 0 && <p className="text-xs opacity-70">Nenhum relatório enviado.</p>}
+                    {db.sdrColdcallReports.filter((r) => r.sdrId === user.id).map((r) => (
+                      <div key={r.id} className="border rounded-xl p-3 text-xs space-y-1" style={{ borderColor: tokens.border, backgroundColor: tokens.surfaceElevated }}>
+                        <strong>{new Date(r.date).toLocaleDateString('pt-BR')}</strong>
+                        <div>Ligações: {r.callsMade} | Atendidas: {r.callsAnswered} | Recusas: {r.refusals} | Reuniões: {r.meetingsScheduled}</div>
+                        <div>Nichos: {r.niches}</div>
+                        <details className="opacity-80">
+                          <summary className="cursor-pointer">Ver detalhes</summary>
+                          <div className="mt-1 space-y-1">
+                            <p>Script: {r.scriptUsed}</p>
+                            <p>Objeções: {r.objections}</p>
+                            <p>Autoavaliação: {r.selfEval}</p>
+                            <p>Anotação: {r.notes}</p>
+                            {r.refusalNotes && <p>Recusas obs: {r.refusalNotes}</p>}
+                          </div>
+                        </details>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
               )}
 
               {activePage === 'sales' && user.role !== 'sdr' && (
