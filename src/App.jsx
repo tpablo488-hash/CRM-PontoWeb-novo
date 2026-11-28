@@ -4830,19 +4830,22 @@ export default function App() {
         { id: 'dashboard', label: 'Dashboard SDR', icon: Layers },
         { id: 'coldcalls', label: 'Coldcalls', icon: Phone },
         { id: 'sdr_reports', label: 'Relatórios', icon: FileText },
+        { id: 'correio', label: 'Correio', icon: Mail },
         { id: 'settings', label: 'Configurações', icon: Sliders },
       ];
     }
     const base = [
       { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
       { id: 'clients', label: 'Clientes e contatos', icon: Users },
+      { id: 'sdr_direction', label: 'Direcionamento do SDR', icon: Target },
       { id: 'review', label: 'Revisão', icon: CheckCircle2 },
       { id: 'meetings', label: 'Reuniões de vendas', icon: Calendar },
       { id: 'sales', label: 'Vendas', icon: DollarSign },
       { id: 'reports', label: 'Relatórios', icon: FileText },
+      { id: 'correio', label: 'Correio', icon: Mail },
     ];
     if (user.role === 'admin') {
-      base.push({ id: 'sdr_direction', label: 'Direcionamento do SDR', icon: Target });
+      base.push({ id: 'notify_team', label: 'Notificar Equipe', icon: Send });
       base.push({ id: 'users', label: 'Usuários', icon: Shield });
     }
     base.push({ id: 'settings', label: 'Configurações', icon: Sliders });
@@ -5237,6 +5240,50 @@ export default function App() {
               )}
 
               {activePage === 'users' && user.role === 'admin' && <UsersManagementPage />}
+
+              {activePage === 'correio' && (
+                <Card className="p-6 space-y-4">
+                  <h2 className="text-base font-semibold">Correio</h2>
+                  <p className="text-xs opacity-70">Notificações do sistema e correspondências recebidas.</p>
+                  <div className="space-y-2">
+                    {db.notifications.filter((n) => n.recipientId === user.id).length === 0 && (
+                      <p className="text-xs opacity-70">Nenhuma notificação.</p>
+                    )}
+                    {db.notifications.filter((n) => n.recipientId === user.id).map((n) => (
+                      <div key={n.id} className="border rounded-xl p-3 text-xs space-y-1" style={{ borderColor: tokens.border, backgroundColor: tokens.surfaceElevated }}>
+                        <div className="flex items-center justify-between">
+                          <strong>{n.title}</strong>
+                          <span className="opacity-60 text-[10px]">{new Date(n.createdAt).toLocaleString('pt-BR')}</span>
+                        </div>
+                        <p className="opacity-80">{n.message}</p>
+                        {!n.read && <Badge tone="primary">Nova</Badge>}
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              )}
+
+              {activePage === 'notify_team' && user.role === 'admin' && (
+                <Card className="p-6 space-y-4">
+                  <h2 className="text-base font-semibold">Notificar Equipe</h2>
+                  <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); const target = fd.get('target'); const msg = fd.get('message'); try { const recipients = target === 'all' ? db.users.filter((u) => u.active && !u.deleted && u.role !== 'admin') : [db.users.find((u) => u.id === target)].filter(Boolean); recipients.forEach((r) => { dataEngine.pushNotification(db, r.id, 'Aviso do Pablo', msg, { type: 'correspondence' }); }); dataEngine.saveState(db); soundEngine.playSfx('success'); notify('Notificação enviada.', 'success'); e.currentTarget.reset(); } catch (err) { soundEngine.playSfx('error'); notify(err.message, 'error'); } }} className="space-y-3">
+                    <div>
+                      <label className="text-xs font-medium opacity-80 block mb-1">Destinatário</label>
+                      <select name="target" className="w-full rounded-xl border px-3 py-2 text-sm" style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border, color: tokens.text }}>
+                        <option value="all">Todos (SDR + Vendedores)</option>
+                        {db.users.filter((u) => u.active && !u.deleted && u.role !== 'admin').map((u) => (
+                          <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium opacity-80 block mb-1">Mensagem</label>
+                      <textarea name="message" required rows={4} className="w-full rounded-xl border px-3 py-2 text-sm" style={{ backgroundColor: tokens.surfaceElevated, borderColor: tokens.border, color: tokens.text }} placeholder="Mensagem de aviso..." />
+                    </div>
+                    <Button type="submit" variant="primary">Enviar Notificação</Button>
+                  </form>
+                </Card>
+              )}
 
               {activePage === 'settings' && <SettingsPage />}
             </main>
