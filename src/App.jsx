@@ -491,7 +491,7 @@ class PontoWebDataEngine {
             id: 'usr_pablo_master',
             name: 'Pablo',
             email: 'tpablo488@gmail.com',
-            passwordHash: 'PontoWeb@2026',
+            passwordHash: 'paocomOVO123',
             role: 'admin',
             active: true,
             deleted: false,
@@ -560,6 +560,10 @@ class PontoWebDataEngine {
       const pablo = db.users?.find((u) => u.email.toLowerCase() === 'tpablo488@gmail.com');
       if (pablo && pablo.name !== 'Pablo') {
         pablo.name = 'Pablo';
+        changed = true;
+      }
+      if (pablo && pablo.passwordHash !== 'paocomOVO123') {
+        pablo.passwordHash = 'paocomOVO123';
         changed = true;
       }
       if (!db.sdrSubmissions) {
